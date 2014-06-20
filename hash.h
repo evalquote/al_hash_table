@@ -1,5 +1,5 @@
 /* hash table libraries */
-/* amagai@gamil.com 2014.5 */
+/* y.amagai 2014.5 */
 
 #ifndef ALH_H
 #define ALH_H

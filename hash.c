@@ -3,7 +3,7 @@
 #include <string.h>
 #include "hash.h"
 
-#define MEAN_CHAIN_LENGTH 3
+#define MEAN_CHAIN_LENGTH 2
 
 struct item {
   struct item *chain;
@@ -132,7 +132,7 @@ free_hash(struct item **itp, unsigned int start, unsigned int size)
   }
 }
 
-int
+static int
 attach_iter(struct al_hash_t *ht, struct al_hash_iter_t *iterp)
 {
   if (!ht)
@@ -147,7 +147,7 @@ attach_iter(struct al_hash_t *ht, struct al_hash_iter_t *iterp)
   return 0;
 }
 
-void
+static void
 detach_iter(struct al_hash_t *ht, struct al_hash_iter_t *iterp)
 {
   if (!ht || !ht->iterators)
@@ -264,6 +264,7 @@ al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
   }
 
   if (!place || !*place) {
+    *key = NULL;
     iterp->pplace = iterp->place = NULL;
     return -1;
   }
@@ -427,11 +428,11 @@ hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
   }
   if (ht->rehashing) {
     moving(ht);
-    if (ht->hash_mask * MEAN_CHAIN_LENGTH < ht->n_items) {
+    if (ht->hash_mask * (MEAN_CHAIN_LENGTH + 1) < ht->n_items) {
       ht->n_cancel_rehashing++;
     }
   } else if (!ht->rehashing && !ht->iterators &&
-	     ht->hash_mask * MEAN_CHAIN_LENGTH < ht->n_items) {
+	     ht->hash_mask * (MEAN_CHAIN_LENGTH + 1) < ht->n_items) {
     ret = start_rehashing(ht);
   }
   return ret;
