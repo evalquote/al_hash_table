@@ -25,8 +25,8 @@ struct al_hash_iter_t;
   al_n_items_old: number of entries of previous small hash table
                   entries of small hash table will moved to main hash table
   al_n_rehashing: number of rehashing
-  al_n_cancel_rehashing: number of cancelling of moving entries between hash table
-                         iterators are attached to the hash table
+  al_n_cancel_rehashing: number of cancelling of moving entries between hash
+                          table iterators are attached to the hash table
  */
 struct al_hash_stat_t {
   unsigned int  al_hash_bit;
@@ -37,9 +37,9 @@ struct al_hash_stat_t {
 };
 
 /*
-  statistics
-  histgram of chain length of main and previous small hash table
- if chain length is over 10, count up [10] of returned array
+ *  statistics
+ *   histgram of chain length of main and previous small hash table
+ *   if chain length is over 10, count up [10] of returned array
  */
 typedef unsigned long al_chain_lenght_t[11];
 
@@ -81,6 +81,12 @@ int al_free_hash(struct al_hash_t *ht);
 int al_hash_stat(struct al_hash_t *ht, 
 		 struct al_hash_stat_t *statp, 
 		 al_chain_lenght_t acl);
+
+/*
+ * return number of attached iterators of ht  (0 <= number)
+ * return -3, ht is NULL
+ */
+int al_hash_n_iterators(struct al_hash_t *ht);
 
 /*
  * set key and value to hash table
@@ -160,6 +166,15 @@ int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
 int al_hash_iter_end(struct al_hash_iter_t *iterp);
 
 /*
+ * return attached hash table.
+ * return NULL
+ *    iterp is NULL
+ *    hash table is destroyed.
+ */
+struct al_hash_t *
+al_hash_iter_ht(struct al_hash_iter_t *iterp);
+
+/*
  * replace value field pointed by iterator
  *   call al_hash_iter() in advance
  * return -1, not pointed (just created or pointed item is deleted)
@@ -180,21 +195,21 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
 
 
 /*
- * Caution:
+ * Note:
  *
  * item_set(), item_set_pv(), item_inc_init():
- *   new key/value entry is inserted to a hash table attached
+ *   New key/value entry is inserted to a hash table attached
  *   with some iterators, iterators may or not may point the
  *   new entry on subsequent al_hash_iter() call.
  *
  * item_detete(), item_delete_pv():
- *   can not delete entries of a hash table attached some iterators
+ *   Can not delete entries of a hash table attached some iterators
  *   by item_detete() or item_delete_pv().
  *   item_detete() or item_delete_pv() is return with -5 immediately
  *   (either key is found, or not found).
  *
  * item_delete_iter():
- *   `key' pointer returned from al_hash_iter() is valid until 
+ *   The `key' pointer returned from al_hash_iter() is valid until 
  *   next al_hash_iter() call. 
  *
  *   ex.
@@ -207,21 +222,20 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  *       }
  *     }
  *
- *   if iterators pointed to same hash table invoke item_delete_iter()
- *   concurrently, result is undefined, may cause crash.
+ *   If iterators pointed to same hash table invoke item_delete_iter()
+ *   concurrently, result is undefined, it may cause crash.
  *
- *   item_delete_iter() result is undefined, my cause crash,
- *   immediately after new key/value (by item_set(), etc) is inserted to
+ *   Result of item_delete_iter() is undefined, it may cause crash,
+ *   when immediately after new key/value (by item_set(), etc) is inserted to
  *   the pointed hash table, without advancing iterator.
  *   ex:
  *   bad: al_hash_iter() -> item_set() -> item_delete_iter() -> al_hash_iter()
  *   ok:  al_hash_iter() -> item_set() -> al_hash_iter() -> item_delete_iter()
  *   ok:  al_hash_iter() -> item_delete_iter() -> item_set() -> al_hash_iter()
  *
- * iterators will be invalid when pointd hash table is destroyed by
- * al_free_hash().  you must call al_hash_iter_end() on the iterators to
- * free memory resources.
- *
+ * Iterators will be invalid when pointd hash table is destroyed by
+ * al_free_hash().  It is still necessary to call al_hash_iter_end() 
+ * on the iterators to free memory resources in the situation.
  */
 
 #endif

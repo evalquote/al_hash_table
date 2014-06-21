@@ -4,9 +4,9 @@ CFLAGS=	-O3 -g -Wall
 
 all:	count
 
-count:	count.o hash.o
+count:	hash.o count.o
 
 hash.o:	hash.h hash.c
 
 clean:
-	rm -rf count *.o *.dSYM a.out *~ 
+	rm -rf count *.o *.dSYM a.out *.zip *~ 

@@ -309,6 +309,27 @@ al_hash_iter_end(struct al_hash_iter_t *iterp)
   return 0;
 }
 
+int al_hash_n_iterators(struct al_hash_t *ht)
+{
+  int ret = 0;
+  if (!ht)
+    return -3;
+  struct al_hash_iter_t *ip = ht->iterators;
+  while (ip) {
+    ret++;
+    ip = ip->chain;
+  }
+  return ret;
+}
+
+struct al_hash_t *
+al_hash_iter_ht(struct al_hash_iter_t *iterp)
+{
+  if (iterp)
+    return iterp->ht;
+  return NULL;
+}
+
 int
 al_hash_stat(struct al_hash_t *ht,
 	     struct al_hash_stat_t *statp,
@@ -659,6 +680,8 @@ item_delete_iter(struct al_hash_iter_t *iterp)
   if (!iterp->pplace) return -1;
 
   struct item *p_it = *iterp->pplace;
+  if (!p_it) return -1;
+
   unsigned int old_size = hash_size(iterp->ht->hash_bit - 1);
 
   if ((void *)p_it == (void *)iterp->place)
