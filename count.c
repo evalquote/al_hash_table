@@ -28,7 +28,9 @@ main() {
   const char *ikey;
   value_t v;
 
-  if ((ret = al_hash_iter_init(ht_count, &itr)))
+  ret = al_hash_iter_init(ht_count, &itr);
+  // ret = al_hash_sorted_iter_init(ht_count, &itr);
+  if (ret)
     fprintf(stderr, "itr init %d\n", ret);
 
   while (!(ret = al_hash_iter(itr, &ikey, &v)))

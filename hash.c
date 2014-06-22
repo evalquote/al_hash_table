@@ -47,6 +47,7 @@ struct al_hash_iter_t {
   struct item **pplace;
   struct item **place;
   struct item *to_be_free;
+  struct item **sorted;
   struct al_hash_iter_t *chain;
 };
 
@@ -101,16 +102,16 @@ al_init_hash(int bit, struct al_hash_t **htp)
   struct al_hash_t *al_hash;
 
   if (!htp) return -3;
+  *htp = NULL;
+
   al_hash = (struct al_hash_t *)calloc(1, sizeof(struct al_hash_t));
-  if (!al_hash) {
-    return -2;
-  }
+  if (!al_hash) return -2;
+
   if (bit == 0)
     bit = DEFAULT_HASH_BIT;
 
   ret = resize_hash(bit, al_hash);
-  if (ret)
-    return ret;
+  if (ret) return ret;
 
   al_hash->moving_unit = 2 * bit;
   *htp = al_hash;
@@ -135,8 +136,7 @@ free_hash(struct item **itp, unsigned int start, unsigned int size)
 static int
 attach_iter(struct al_hash_t *ht, struct al_hash_iter_t *iterp)
 {
-  if (!ht)
-    return -4;
+  if (!ht) return -4;
   iterp->chain = ht->iterators;
   ht->iterators = iterp;
 
@@ -184,6 +184,23 @@ count_chain(al_chain_lenght_t acl,
   }
 }
 
+static long
+add_chain(struct item **it_array, unsigned int index,
+	  struct item **itp, unsigned int start, unsigned int size, long nmax)
+{
+  unsigned int i;
+  for (i = start; i < size; i++) {
+    struct item *it = itp[i];
+    while (it) {
+      if (--nmax < 0)
+	return -99;
+      it_array[index++] = it;
+      it = it->chain;
+    }
+  }
+  return index;
+}
+
 int
 al_free_hash(struct al_hash_t *ht)
 {
@@ -209,6 +226,7 @@ int
 al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp)
 {
   if (!ht || !iterp) return -3;
+  *iterp = NULL;
   unsigned int index;
   unsigned int old_size = hash_size(ht->hash_bit - 1);
   unsigned int total_size = old_size + hash_size(ht->hash_bit);
@@ -216,8 +234,7 @@ al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp)
 
   struct al_hash_iter_t *ip = (struct al_hash_iter_t *)
                                calloc(1, sizeof(struct al_hash_iter_t));
-  if (!ip)
-    return -2;
+  if (!ip) return -2;
 
   if (ht->rehashing) {
     index = ht->rehashing_front;
@@ -243,36 +260,94 @@ al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp)
   return 0;
 }
 
+static int
+it_cmp(const void *a, const void *b) {
+ return strcmp((*(struct item **)a)->key, (*(struct item **)b)->key);
+}
+
+int
+al_hash_sorted_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp)
+{
+  if (!ht || !iterp) return -3;
+  *iterp = NULL;
+  long index = 0;
+  struct item **it_array = NULL;
+
+  struct al_hash_iter_t *ip = (struct al_hash_iter_t *)
+                               calloc(1, sizeof(struct al_hash_iter_t));
+  if (!ip) return -2;
+  it_array = (struct item **)malloc(sizeof(struct item *) *
+				    (ht->n_items + ht->n_items_old));
+  if (!it_array) {
+    free(ip);
+    return -2;
+  }
+
+  if (ht->rehashing) {
+    index = add_chain(it_array, index, ht->hash_table_old,
+		      ht->rehashing_front, hash_size(ht->hash_bit - 1),
+		      ht->n_items_old);
+    if (index != ht->n_items_old) {
+      free(it_array);
+      free(ip);
+      return -99;
+    }
+  }
+  index = add_chain(it_array, index, ht->hash_table,
+		    0, hash_size(ht->hash_bit), ht->n_items);
+  if (index != ht->n_items + ht->n_items_old) {
+    free(it_array);
+    free(ip);
+    return -99;
+  }
+
+  qsort((void *)it_array, index, sizeof(struct item *), it_cmp);
+
+  ip->sorted = it_array;
+  ip->oindex = index;
+  ip->ht = ht;
+  *iterp = ip;
+  attach_iter(ht, ip);
+  return 0;
+}
+
 int
 al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
 {
   if (!iterp || !key) return -3;
 
-  struct al_hash_t *ht = iterp->ht;
-
-  if (!ht || !ht->iterators) return -4;
-
-  unsigned int old_size = hash_size(ht->hash_bit - 1);
-  unsigned int total_size = old_size + hash_size(ht->hash_bit);
-  unsigned int index = iterp->index;
-  struct item **place = iterp->place;
-
+  *key = NULL;
   if (iterp->to_be_free) {
     free(iterp->to_be_free->key);
     free(iterp->to_be_free);
     iterp->to_be_free = NULL;
   }
 
+  struct al_hash_t *ht = iterp->ht;
+  if (!ht || !ht->iterators) return -4;
+
+  unsigned int index = iterp->index;
+
+  if (iterp->sorted) {
+    if (iterp->oindex <= index) return -1;
+    struct item *it = iterp->sorted[index];
+    *key = it->key;
+    if (ret_v) *ret_v = it->value;
+    iterp->index++;
+    return 0;
+  }
+
+  struct item **place = iterp->place;
   if (!place || !*place) {
-    *key = NULL;
     iterp->pplace = iterp->place = NULL;
     return -1;
   }
 
+  unsigned int old_size = hash_size(ht->hash_bit - 1);
+  unsigned int total_size = old_size + hash_size(ht->hash_bit);
   struct item *it = *place;
   *key = it->key;
-  if (ret_v)
-    *ret_v = it->value;
+  if (ret_v) *ret_v = it->value;
 
   iterp->oindex = index;
   iterp->pplace = iterp->place;
@@ -297,23 +372,25 @@ int
 al_hash_iter_end(struct al_hash_iter_t *iterp)
 {
   if (!iterp) return -3;
+
   if (iterp->to_be_free) {
     free(iterp->to_be_free->key);
     free(iterp->to_be_free);
     iterp->to_be_free = NULL;
   }
 
-  struct al_hash_t *ht = iterp->ht;
-  detach_iter(ht, iterp);
+  detach_iter(iterp->ht, iterp);
+
+  if (iterp->sorted) free(iterp->sorted);
   free(iterp);
+
   return 0;
 }
 
 int al_hash_n_iterators(struct al_hash_t *ht)
 {
   int ret = 0;
-  if (!ht)
-    return -3;
+  if (!ht) return -3;
   struct al_hash_iter_t *ip = ht->iterators;
   while (ip) {
     ret++;
@@ -325,9 +402,7 @@ int al_hash_n_iterators(struct al_hash_t *ht)
 struct al_hash_t *
 al_hash_iter_ht(struct al_hash_iter_t *iterp)
 {
-  if (iterp)
-    return iterp->ht;
-  return NULL;
+  return iterp ? iterp->ht : NULL;
 }
 
 int
@@ -342,8 +417,7 @@ al_hash_stat(struct al_hash_t *ht,
   statp->al_n_cancel_rehashing = ht->n_cancel_rehashing;
   statp->al_n_rehashing = ht->n_rehashing;
 
-  if (!acl)
-    return 0;
+  if (!acl) return 0;
 
   memset((void *)acl, 0, sizeof(al_chain_lenght_t));
 
@@ -359,8 +433,7 @@ al_hash_stat(struct al_hash_t *ht,
 static void
 moving(struct al_hash_t *ht)
 {
-  if (ht->iterators)
-    return;
+  if (ht->iterators) return;
   long i;
   for (i = 0; i < ht->moving_unit; i++) {
     struct item *it = ht->hash_table_old[ht->rehashing_front];
@@ -503,11 +576,9 @@ hash_delete(struct al_hash_t *ht, char *key, unsigned int hv)
     place = &it->chain;
     it = it->chain;
   }
-  if (!it)
-    return NULL;
+  if (!it) return NULL;
 
   *place = it->chain;
-
   if (old)
     ht->n_items_old--;
   else
@@ -535,8 +606,7 @@ item_get(struct al_hash_t *ht, char *key, value_t *v)
   struct item *ret = hash_find(ht, key, hv);
 
   if (ret) {
-    if (v)
-      *v = ret->value;
+    if (v) *v = ret->value;
     return 0;
   }
   return -1;
@@ -563,8 +633,7 @@ item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
   unsigned int hv = hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   if (it) {
-    if (ret_pv)
-      *ret_pv = it->value;
+    if (ret_pv) *ret_pv = it->value;
     it->value = v;
     return 0;
   }
@@ -591,8 +660,7 @@ item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
   unsigned int hv = hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   if (it) {
-    if (ret_pv)
-      *ret_pv = it->value;
+    if (ret_pv) *ret_pv = it->value;
     it->value = v;
     return 0;
   }
@@ -622,8 +690,7 @@ item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
   unsigned int hv = hash_fn_i(key);
   struct item *it = hash_delete(ht, key, hv);
   if (it) {
-    if (ret_pv)
-      *ret_pv = it->value;
+    if (ret_pv) *ret_pv = it->value;
     free(it->key);
     free(it);
     return 0;
@@ -639,8 +706,7 @@ item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
   struct item *it = hash_find(ht, key, hv);
   if (it) {
     it->value += off;
-    if (ret_v)
-      *ret_v = it->value;
+    if (ret_v) *ret_v = it->value;
     return 0;
   }
   return -1;
@@ -654,8 +720,7 @@ item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
   struct item *it = hash_find(ht, key, hv);
   if (it) {
     it->value += off;
-    if (ret_v)
-      *ret_v = it->value;
+    if (ret_v) *ret_v = it->value;
     return 0;
   }
   return hash_v_insert(ht, hv, key, (value_t)off);
@@ -666,9 +731,30 @@ item_replace_iter(struct al_hash_iter_t *iterp, value_t v)
 {
   if (!iterp) return -3;
   if (!iterp->ht || !iterp->ht->iterators) return -4;
-  if (!iterp->pplace) return -1;
 
-  (*iterp->pplace)->value = v;
+  if (iterp->sorted) {
+    unsigned int index = iterp->index;
+    if (index == 0 || iterp->oindex < index || iterp->to_be_free) return -1;
+    struct item *it = iterp->sorted[index - 1];
+    if (!it) return -1;
+    it->value = v;
+  } else {
+    if (!iterp->pplace) return -1;
+    (*iterp->pplace)->value = v;
+  }
+  return 0;
+}
+
+static int
+del_sorted_iter(struct al_hash_iter_t *iterp)
+{
+  unsigned int index = iterp->index;
+  if (index == 0 || iterp->oindex < index || iterp->to_be_free) return -1;
+  struct item *it = iterp->sorted[index - 1];
+  if (!it) return -1;
+  it = hash_delete(iterp->ht, it->key, hash_fn_i(it->key));
+  if (!it) return -1;
+  iterp->to_be_free = it;
   return 0;
 }
 
@@ -677,8 +763,11 @@ item_delete_iter(struct al_hash_iter_t *iterp)
 {
   if (!iterp) return -3;
   if (!iterp->ht || !iterp->ht->iterators) return -4;
-  if (!iterp->pplace) return -1;
 
+  if (iterp->sorted)
+    return del_sorted_iter(iterp);
+
+  if (!iterp->pplace) return -1;
   struct item *p_it = *iterp->pplace;
   if (!p_it) return -1;
 

@@ -148,8 +148,21 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
 int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp);
 
 /*
+ * create sorted iterator attached to ht
+ *   after first al_hash_iter() call, the iterator points entries
+ *    (when hash table is not empty)
+ * return -2, cannot alloc memories
+ * return -3, ht or iterp is NULL
+ * return -99, internal error
+ */
+int al_hash_sorted_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp);
+
+/*
  * advance iterator
- *   key appears arbitary order
+ * iterator created by al_hash_iter_init(), item appears arbitary
+ * iterator created by al_hash_sorted_iter_init(), 
+ *   item appears dictionary order of key.
+ *
  * return -1, cannot advance, reached end
  * return -3, iterp or key is NULL
  * return -4, hash table is destroyed
@@ -222,12 +235,12 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  *       }
  *     }
  *
- *   If iterators pointed to same hash table invoke item_delete_iter()
- *   concurrently, result is undefined, it may cause crash.
+ *   If iterators pointed to same hash table invoke item_delete_iter(), 
+ *   result is undefined, it may cause crash.
  *
- *   Result of item_delete_iter() is undefined, it may cause crash,
- *   when immediately after new key/value (by item_set(), etc) is inserted to
- *   the pointed hash table, without advancing iterator.
+ *   Call item_delete_iter() immediately after inserting new key/value
+ *   (by item_set(), etc) to the pointed hash table without advancing
+ *   iterator, result of the deletion is undefined.
  *   ex:
  *   bad: al_hash_iter() -> item_set() -> item_delete_iter() -> al_hash_iter()
  *   ok:  al_hash_iter() -> item_set() -> al_hash_iter() -> item_delete_iter()
@@ -236,6 +249,10 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  * Iterators will be invalid when pointd hash table is destroyed by
  * al_free_hash().  It is still necessary to call al_hash_iter_end() 
  * on the iterators to free memory resources in the situation.
+ *
+ * sorted iterator:
+ *   Sorted iterator is implemented using array of pointer
+ *   pointed to each hash item. So, the array may be very large.
  */
 
 #endif
