@@ -1,20 +1,49 @@
 /* hash table libraries */
 /* y.amagai 2014.5 */
 
+/* NOT thread safe */
+
 #ifndef ALH_H
 #define ALH_H
 #include <inttypes.h>
 
-/* NOT thread safe */
+/* type of hash entry scalar value */
+typedef long value_t;
 
-/* type of hash entry value */
-typedef  long value_t;
+/* type of hash entry link value */
+typedef const char * link_value_t;
+
+#ifdef AL_HASH_O
+void al_free_link_value(link_value_t v) { if (v) free((void *)v); }
+// void al_free_link_value(link_value_t v) { ; }
+
+int al_link_value(link_value_t v, link_value_t *vp) {
+  link_value_t cp = strdup(v);
+  if (cp) {
+    *vp = cp;
+    return 0;
+  } else {
+    *vp = NULL;
+    return -1;
+  }
+}
+
+// int al_link_value(link_value_t v, link_value_t *vp) { *vp = v; return 0; }
+
+int
+al_link_value_cmp(link_value_t a, link_value_t b) {
+  return strcmp((const char *)a, (const char *)b);
+}
+#endif
 
 /* type of hash table */
 struct al_hash_t;
 
 /* type of iterator pointed to hash table */
 struct al_hash_iter_t;
+
+/* type of iterator pointed to hash table */
+struct al_linked_value_iter_t;
 
 /*
   statistics
@@ -41,7 +70,7 @@ struct al_hash_stat_t {
  *   histgram of chain length of main and previous small hash table
  *   if chain length is over 10, count up [10] of returned array
  */
-typedef unsigned long al_chain_lenght_t[11];
+typedef unsigned long al_chain_length_t[11];
 
 /* default bit size of hash table */
 #define DEFAULT_HASH_BIT 15
@@ -60,6 +89,7 @@ typedef unsigned long al_chain_lenght_t[11];
  * return -3, htp is NULL
  */
 int al_init_hash(int bit, struct al_hash_t **htp);
+int al_init_linked_hash(int bit, struct al_hash_t **htp);
 
 /*
  * destroy hash table
@@ -80,13 +110,22 @@ int al_free_hash(struct al_hash_t *ht);
  */
 int al_hash_stat(struct al_hash_t *ht, 
 		 struct al_hash_stat_t *statp, 
-		 al_chain_lenght_t acl);
+		 al_chain_length_t acl);
 
 /*
  * return number of attached iterators of ht  (0 <= number)
  * return -3, ht is NULL
  */
 int al_hash_n_iterators(struct al_hash_t *ht);
+
+/*
+ * predicate
+ * return  0: yes
+ * return -1: no
+ * return -3: ht or iterp is NULL
+ */
+int al_is_link_hash(struct al_hash_t *ht);
+int al_is_link_iter(struct al_hash_iter_t *iterp);
 
 /*
  * set key and value to hash table
@@ -101,6 +140,13 @@ int item_set(struct al_hash_t *ht, char *key, value_t v);
 int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv);
 
 /*
+ *
+ * return -2, cannot alloc memories
+ * return -6, hash table type is not 'linked'
+ */
+int item_add_link(struct al_hash_t *ht, char *key, link_value_t v);
+
+/*
  * find key on the hash table
  * return -1, key is not found
  * return -3, ht or  key is NULL
@@ -108,8 +154,11 @@ int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv);
  *            (only item_delete and item_delete_pv)
  * 
  * if pointer for return value (ret-v, ret_pv) is NULL, ignore it
+ *
+ * delete:
+ *   either of scalor hash table and linked hash is acceptable as parameter
  * replace:
- *  if key is found, replace value field by v, else return -1
+ *   if key is found, replace value field by v, else return -1
  */
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
@@ -142,26 +191,18 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  * create iterator attached to ht
  *   after first al_hash_iter() call, the iterator points entries
  *    (when hash table is not empty)
- * return -2, cannot alloc memories
- * return -3, ht or iterp is NULL
- */
-int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp);
-
-/*
- * create sorted iterator attached to ht
- *   after first al_hash_iter() call, the iterator points entries
- *    (when hash table is not empty)
+ *  sort_key 0: item appears arbitary order.
+ *           1: item appears dictionary order of key
+ *           2: item appears counter dictionary order of key
+ *        else: return -7
  * return -2, cannot alloc memories
  * return -3, ht or iterp is NULL
  * return -99, internal error
  */
-int al_hash_sorted_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp);
+int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key);
 
 /*
  * advance iterator
- * iterator created by al_hash_iter_init(), item appears arbitary
- * iterator created by al_hash_sorted_iter_init(), 
- *   item appears dictionary order of key.
  *
  * return -1, cannot advance, reached end
  * return -3, iterp or key is NULL
@@ -172,8 +213,51 @@ int al_hash_sorted_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp
 int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
 
 /*
+ * advance iterator pointed to linked_hash
+ *  sort_value 0: item appears arbitary order.
+ *             1: item appears dictionary order of key
+ *             2: item appears counter dictionary order of key
+ *          else: return -7
+ *  al_link_value_cmp() is applied to compare the value.
+ */
+
+int al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
+			struct al_linked_value_iter_t **v_iterp, int sort_value);
+
+/*
+ *  Return number of values belong to value iteration
+ *
+ * return -3, v_iterp NULL
+ */
+int al_linked_hash_nvalue(struct al_linked_value_iter_t *v_iterp);
+
+/*
+ * Rewind value iteration, next al_linked_value_iter() returns
+ * first value of iteration.
+ *
+ * return -3, iterp is NULL
+ */
+int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
+
+/*
+ * advance value iterator
+ *
+ * return -1, cannot advance, reached end
+ * return -3, v_iterp NULL
+ */
+int al_linked_value_iter(struct al_linked_value_iter_t *v_iterp,
+			 link_value_t *ret_v);
+
+/*
  * destroy iterator
- * iterp will free() ed, so do not use it any more
+ * return -3, v_iterp NULL
+ */
+
+int al_linked_value_iter_end(struct al_linked_value_iter_t *v_iterp);
+
+/*
+ * destroy iterator
+ * iterp will free(), so do not use it any more
  * return -3, iterp is NULL
  */
 int al_hash_iter_end(struct al_hash_iter_t *iterp);
@@ -193,16 +277,17 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp);
  * return -1, not pointed (just created or pointed item is deleted)
  * return -3, iterp or key is NULL
  * return -4, hash table is destroyed
+ * return -6, hash table type is not 'scalar'
  */
 int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
 
 /*
  * delete key/value item pointed by iterator
  *   call al_hash_iter() in advance
- *
  * return -1, not pointed (just created or pointed item is deleted)
  * return -3, iterp or key is NULL
  * return -4, hash table is destroyed
+ * return -6, hash table type is not 'scalar'
  */
 int item_delete_iter(struct al_hash_iter_t *iterp);
 
@@ -216,9 +301,8 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  *   new entry on subsequent al_hash_iter() call.
  *
  * item_detete(), item_delete_pv():
- *   Can not delete entries of a hash table attached some iterators
- *   by item_detete() or item_delete_pv().
- *   item_detete() or item_delete_pv() is return with -5 immediately
+ *   Can not delete entries of a hash table attached some iterators.
+ *   Item_detete() / item_delete_pv() are return with -5 immediately
  *   (either key is found, or not found).
  *
  * item_delete_iter():
@@ -254,5 +338,30 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  *   Sorted iterator is implemented using array of pointer
  *   pointed to each hash item. So, the array may be very large.
  */
+
+/*
+ *   utility
+ */
+
+/*
+ *  char *cp = line;
+ *  char buf[100]; int n;
+ *  al_set_s(buf, cp, '\t');
+ *  al_set_i(n, cp, '\t');
+ *
+ */
+
+#define al_set_i(to, cp, del) do{if (cp) (to)=atoi(al_gettok((cp),&(cp),del));} while(0)
+#define al_set_l(to, cp, del) do{if (cp) (to)=atol(al_gettok((cp),&(cp),del));} while(0)
+#define al_set_s(to, cp, del) do{if (cp) strncpy((to),al_gettok((cp),&(cp),del),sizeof(to)-1)} while(0)
+#define al_set_sp(to, cp, del) do{if (cp) (to)=al_gettok((cp),&(cp),del);} while(0)
+
+/*
+ * 
+ *
+ *  char *elms[2], tmp[100];
+ *  al_split(elms, 2, tmp, const_str, '\t');
+ */
+void al_split(char **elms, int size, char *tmp_cp, const char *str, char del);
 
 #endif
