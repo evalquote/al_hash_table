@@ -48,21 +48,21 @@ struct al_linked_value_iter_t;
 /*
   statistics
 
-  al_hash_bit:    bit size of main hash table
-                  hash table size is  (1 << al_hash_bit)
-  al_n_items:     number of entries of main hash table
-  al_n_items_old: number of entries of previous small hash table
-                  entries of small hash table will moved to main hash table
-  al_n_rehashing: number of rehashing
+  al_hash_bit:      bit size of main hash table
+                    hash table size is  (1 << al_hash_bit)
+  al_n_entries:     number of entries of main hash table
+  al_n_entries_old: number of entries of previous half size hash table
+                    entries of small hash table will moved to main hash table
+  al_n_rehashing:   number of rehashing
   al_n_cancel_rehashing: number of cancelling of moving entries between hash
-                          table iterators are attached to the hash table
+                         table iterators are attached to the hash table
  */
 struct al_hash_stat_t {
   unsigned int  al_hash_bit;
-  unsigned long al_n_items;
-  unsigned long al_n_items_old;
-  unsigned long al_n_cancel_rehashing;
   unsigned int  al_n_rehashing;
+  unsigned long al_n_entries;
+  unsigned long al_n_entries_old;
+  unsigned long al_n_cancel_rehashing;
 };
 
 /*
@@ -112,6 +112,8 @@ int al_hash_stat(struct al_hash_t *ht,
 		 struct al_hash_stat_t *statp, 
 		 al_chain_length_t acl);
 
+int al_out_hash_stat(struct al_hash_t *ht, const char *title);
+
 /*
  * return number of attached iterators of ht  (0 <= number)
  * return -3, ht is NULL
@@ -144,7 +146,7 @@ int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv);
  * return -2, cannot alloc memories
  * return -6, hash table type is not 'linked'
  */
-int item_add_link(struct al_hash_t *ht, char *key, link_value_t v);
+int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
 
 /*
  * find key on the hash table
@@ -343,6 +345,9 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  *   utility
  */
 
+char *
+al_gettok(char *cp, char **savecp, char del);
+
 /*
  *  char *cp = line;
  *  char buf[100]; int n;
@@ -353,15 +358,26 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
 
 #define al_set_i(to, cp, del) do{if (cp) (to)=atoi(al_gettok((cp),&(cp),del));} while(0)
 #define al_set_l(to, cp, del) do{if (cp) (to)=atol(al_gettok((cp),&(cp),del));} while(0)
-#define al_set_s(to, cp, del) do{if (cp) strncpy((to),al_gettok((cp),&(cp),del),sizeof(to)-1)} while(0)
+#define al_set_s(to, cp, del) do{if (cp) strncpy((to),al_gettok((cp),&(cp),del),sizeof(to)-1);} while(0)
 #define al_set_sp(to, cp, del) do{if (cp) (to)=al_gettok((cp),&(cp),del);} while(0)
 
 /*
+ *  char *elms[5], tmp[100];
+ *  al_split(elms, tmp, "abc\tdef\t\tghi", '\t');
+ *  elms== "abc", "def", "", "ghi", NULL
  * 
- *
- *  char *elms[2], tmp[100];
- *  al_split(elms, 2, tmp, const_str, '\t');
  */
-void al_split(char **elms, int size, char *tmp_cp, const char *str, char del);
+void al_split_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
+#define al_split(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
+
+/* not return nul */
+/*
+ *  char *elms[5], tmp[100];
+ *  al_split_nn(elms, tmp, "abc\tdef\t\tghi", '\t');
+ *  elms== "abc", "def", "ghi", NULL, NULL
+ */
+
+void al_split_nn_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
+#define al_split_nn(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 
 #endif
