@@ -82,14 +82,13 @@ typedef unsigned long al_chain_length_t[11];
  * User API
  *
  * return 0  on success
- *
+ * return -2 allocation fails
+ * return -3 parameter error (provide NULL pointer)
  */
 
 /*
  * create hash table
  * bit == 0, use AL_DEFAULT_HASH_BIT
- * return -2, cannot alloc memories
- * return -3, htp is NULL
  */
 int al_init_hash(int bit, struct al_hash_t **htp);
 int al_init_linked_hash(int bit, struct al_hash_t **htp);
@@ -98,7 +97,6 @@ int al_init_pqueue_hash(int bit, struct al_hash_t **htp, int sort_order, unsigne
 /*
  * destroy hash table
  *   ht will be free()
- * return -3, ht is NULL
  *
  * iterators attached to the hash table will be invalid
  *   (you must al_hash_iter_end() on the iterators)
@@ -107,7 +105,6 @@ int al_free_hash(struct al_hash_t *ht);
 
 /*
  * get statistics
- * return -3, statp is NULL
  *
  * if acl is NULL, no chain statistics returned
  *   (counting chain length needs some CPU resources)
@@ -120,7 +117,6 @@ int al_out_hash_stat(struct al_hash_t *ht, const char *title);
 
 /*
  * return number of attached iterators of ht  (0 <= number)
- * return -3, ht is NULL
  */
 int al_hash_n_iterators(struct al_hash_t *ht);
 
@@ -128,7 +124,6 @@ int al_hash_n_iterators(struct al_hash_t *ht);
  * predicate
  * return  0: yes
  * return -1: no
- * return -3: ht or iterp is NULL
  */
 int al_is_linked_hash(struct al_hash_t *ht);
 int al_is_linked_iter(struct al_hash_iter_t *iterp);
@@ -137,8 +132,6 @@ int al_is_pqueue_iter(struct al_hash_iter_t *iterp);
 
 /*
  * set key and value to hash table
- * return -2, cannot alloc memories
- * return -3, ht is NULL
  *
  * if key is not in hash table, add it
  * else replace value field by v
@@ -148,8 +141,6 @@ int item_set(struct al_hash_t *ht, char *key, value_t v);
 int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv);
 
 /*
- *
- * return -2, cannot alloc memories
  * return -6, hash table type is not 'linked'
  */
 int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
@@ -157,7 +148,6 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
 /*
  * find key on the hash table
  * return -1, key is not found
- * return -3, ht or  key is NULL
  * return -5, iterators are attached on the hash table
  *            (only item_delete and item_delete_pv)
  * 
@@ -203,8 +193,6 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  *           1: item appears dictionary order of key
  *           2: item appears counter dictionary order of key
  *        else: return -7
- * return -2, cannot alloc memories
- * return -3, ht or iterp is NULL
  * return -99, internal error
  */
 int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key);
@@ -212,7 +200,6 @@ int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int s
 /*
  * destroy iterator
  *   iterp will free(), so do not use it any more
- * return -3, iterp is NULL
  */
 int al_hash_iter_end(struct al_hash_iter_t *iterp);
 
@@ -227,7 +214,6 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp);
 /*
  * advance iterator
  * return -1, reached end
- * return -3, iterp or key is NULL
  * return -4, hash table is destroyed
  *
  * do not modify the string pointed by `key'
@@ -238,7 +224,6 @@ int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
  * replace value field pointed by iterator
  *   call al_hash_iter() in advance
  * return -1, not pointed (just created or pointed item is deleted)
- * return -3, iterp or key is NULL
  * return -4, hash table is destroyed
  * return -6, hash table type is not 'scalar'
  */
@@ -248,7 +233,6 @@ int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
  * delete key/value item pointed by iterator
  *   call al_hash_iter() in advance
  * return -1, not pointed (just created or pointed item is deleted)
- * return -3, iterp or key is NULL
  * return -4, hash table is destroyed
  * return -6, hash table type is not 'scalar'
  */
@@ -270,27 +254,23 @@ int al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 
 /*
  * destroy iterator
- * return -3, v_iterp NULL
  */
 int al_linked_value_iter_end(struct al_linked_value_iter_t *v_iterp);
 
 /*
  * advance value iterator
  * return -1, reached end
- * return -3, v_iterp NULL
  */
 int al_linked_value_iter(struct al_linked_value_iter_t *v_iterp,
 			 link_value_t *ret_v);
 
 /*
  * Return number of values belong to value iterator.
- * return -3, v_iterp NULL
  */
 int al_linked_hash_nvalue(struct al_linked_value_iter_t *v_iterp);
 
 /*
  * Rewind value iteration.
- * return -3, iterp is NULL
  */
 int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
 
@@ -316,20 +296,17 @@ int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp);
 /*
  * advance priority queue value iterator
  * return -1, reached end
- * return -3, v_iterp NULL
  */
 int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
 			 link_value_t *keyp, value_t *ret_count);
 
 /*
  * Return number of values belong to value iterator.
- * return -3, v_iterp NULL
  */
 int al_pqueue_hash_nvalue(struct al_pqueue_value_iter_t *v_iterp);
 
 /*
  * Rewind value iteration.
- * return -3, iterp is NULL
  */
 int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
 

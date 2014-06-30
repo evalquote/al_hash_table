@@ -1413,7 +1413,7 @@ delete_node(struct al_skiplist_t *sl, struct node *nd, struct node **update)
     sl->last_key = update[0]->key;
 #endif
 
-  for (i = i - 1; 0 <= i; --i) {
+  for (--i; 0 <= i; --i) {
     if (sl->head->forward[i] == NULL)
       sl->level--;
   }
@@ -1460,7 +1460,7 @@ get_level(pq_key_t key)
 {
   int level = 1;
   uint32_t r = al_hash_fn_i(key);
-  while (r & 1) {
+  while (r & 1) { // p is 0.5,  "(r&3)==0": p is 0.25, "(r&3)!=0": p is 0.75
     level++;
     r >>= 1;
   }
@@ -1471,7 +1471,6 @@ static int
 node_set(struct al_skiplist_t *sl, pq_key_t key, struct node *update[], struct node **ret_nd)
 {
   struct node *new_node;
-
   int i, level;
 
   level = get_level(key);
@@ -1526,7 +1525,7 @@ sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
   if (max_n == 0 || sl->n_entries < max_n)
     return sl_set(sl, key, v);
 
-  if (pq_k_cmp(sl, sl->last_key, key) < 0) return 0;
+  if (pq_k_cmp(sl, sl->last_key, key) <= 0) return 0;
   int ret = sl_set(sl, key, v);
   if (ret) return ret;
 
