@@ -1435,9 +1435,9 @@ sl_delete(struct al_skiplist_t *sl, pq_key_t key)
 
   nd = nd->forward[0];
 
-  if (nd && pq_k_cmp(sl, nd->key, key) == 0) {
+  if (nd && strcmp(nd->key, key) == 0) { // pq_k_cmp()
 #ifdef SL_FIRST_KEY
-    int c = pq_k_cmp(sl, sl->first_key, key);
+    int c = strcmp(sl->first_key, key);  // pq_k_cmp()
 #endif
     delete_node(sl, nd, update);
     free((void *)nd->key);
