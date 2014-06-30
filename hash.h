@@ -392,10 +392,9 @@ struct al_skiplist_iter_t;
 
 int al_create_skiplist(struct al_skiplist_t **slp, int sort_order);
 int al_free_skiplist(struct al_skiplist_t *sl);
-int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp);
-int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v);
-int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
-int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
+int sl_empty_p(struct al_skiplist_t *sl);
+unsigned long sl_n_entries(struct al_skiplist_t *sl);
+int sl_skiplist_stat(struct al_skiplist_t *sl);
 
 int sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v);
 int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n);
@@ -407,9 +406,10 @@ int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
 int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v);
 int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n);
 
-int sl_empty_p(struct al_skiplist_t *sl);
-unsigned long sl_n_entries(struct al_skiplist_t *sl);
-int sl_skiplist_stat(struct al_skiplist_t *sl);
+int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp);
+int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
+int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v);
+int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 
 /*
  *   utility
