@@ -14,8 +14,8 @@ typedef long value_t;
 typedef const char * link_value_t;
 
 #ifdef AL_HASH_O
-void al_free_link_value(link_value_t v) { if (v) free((void *)v); }
-// void al_free_link_value(link_value_t v) { ; }
+void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
+// void al_free_linked_value(link_value_t v) { ; }
 
 int al_link_value(link_value_t v, link_value_t *vp) {
   link_value_t cp = strdup(v);
@@ -42,8 +42,11 @@ struct al_hash_t;
 /* type of iterator pointed to hash table */
 struct al_hash_iter_t;
 
-/* type of iterator pointed to hash table */
+/* type of iterator pointed to linked hash table */
 struct al_linked_value_iter_t;
+
+/* type of iterator pointed to priority queue hash table */
+struct al_pqueue_value_iter_t;
 
 /*
   statistics
@@ -90,6 +93,7 @@ typedef unsigned long al_chain_length_t[11];
  */
 int al_init_hash(int bit, struct al_hash_t **htp);
 int al_init_linked_hash(int bit, struct al_hash_t **htp);
+int al_init_pqueue_hash(int bit, struct al_hash_t **htp, int sort_order, unsigned long max_n);
 
 /*
  * destroy hash table
@@ -126,8 +130,10 @@ int al_hash_n_iterators(struct al_hash_t *ht);
  * return -1: no
  * return -3: ht or iterp is NULL
  */
-int al_is_link_hash(struct al_hash_t *ht);
-int al_is_link_iter(struct al_hash_iter_t *iterp);
+int al_is_linked_hash(struct al_hash_t *ht);
+int al_is_linked_iter(struct al_hash_iter_t *iterp);
+int al_is_pqueue_hash(struct al_hash_t *ht);
+int al_is_pqueue_iter(struct al_hash_iter_t *iterp);
 
 /*
  * set key and value to hash table
@@ -204,74 +210,29 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
 int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key);
 
 /*
- * advance iterator
- *
- * return -1, cannot advance, reached end
- * return -3, iterp or key is NULL
- * return -4, hash table is destroyed
- *
- * do not modify the string pointed by `key'
- */
-int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
-
-/*
- * advance iterator pointed to linked_hash
- *  sort_value 0: item appears arbitary order.
- *             1: item appears dictionary order of key
- *             2: item appears counter dictionary order of key
- *          else: return -7
- *  al_link_value_cmp() is applied to compare the value.
- */
-
-int al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-			struct al_linked_value_iter_t **v_iterp, int sort_value);
-
-/*
- *  Return number of values belong to value iteration
- *
- * return -3, v_iterp NULL
- */
-int al_linked_hash_nvalue(struct al_linked_value_iter_t *v_iterp);
-
-/*
- * Rewind value iteration, next al_linked_value_iter() returns
- * first value of iteration.
- *
- * return -3, iterp is NULL
- */
-int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
-
-/*
- * advance value iterator
- *
- * return -1, cannot advance, reached end
- * return -3, v_iterp NULL
- */
-int al_linked_value_iter(struct al_linked_value_iter_t *v_iterp,
-			 link_value_t *ret_v);
-
-/*
  * destroy iterator
- * return -3, v_iterp NULL
- */
-
-int al_linked_value_iter_end(struct al_linked_value_iter_t *v_iterp);
-
-/*
- * destroy iterator
- * iterp will free(), so do not use it any more
+ *   iterp will free(), so do not use it any more
  * return -3, iterp is NULL
  */
 int al_hash_iter_end(struct al_hash_iter_t *iterp);
 
 /*
  * return attached hash table.
- * return NULL
- *    iterp is NULL
- *    hash table is destroyed.
+ * return NULL:  iterp is NULL
+ *               hash table is destroyed.
  */
 struct al_hash_t *
 al_hash_iter_ht(struct al_hash_iter_t *iterp);
+
+/*
+ * advance iterator
+ * return -1, reached end
+ * return -3, iterp or key is NULL
+ * return -4, hash table is destroyed
+ *
+ * do not modify the string pointed by `key'
+ */
+int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
 
 /*
  * replace value field pointed by iterator
@@ -292,6 +253,85 @@ int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
  * return -6, hash table type is not 'scalar'
  */
 int item_delete_iter(struct al_hash_iter_t *iterp);
+
+
+/*** iterators for linked hash */
+
+/*
+ * advance iterator pointed to linked_hash
+ *  sort_value 0: item appears arbitary order.
+ *             1: item appears dictionary order of key
+ *             2: item appears counter dictionary order of key
+ *          else: return -7
+ *  al_link_value_cmp() is applied to compare the value.
+ */
+int al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
+			struct al_linked_value_iter_t **v_iterp, int sort_value);
+
+/*
+ * destroy iterator
+ * return -3, v_iterp NULL
+ */
+int al_linked_value_iter_end(struct al_linked_value_iter_t *v_iterp);
+
+/*
+ * advance value iterator
+ * return -1, reached end
+ * return -3, v_iterp NULL
+ */
+int al_linked_value_iter(struct al_linked_value_iter_t *v_iterp,
+			 link_value_t *ret_v);
+
+/*
+ * Return number of values belong to value iterator.
+ * return -3, v_iterp NULL
+ */
+int al_linked_hash_nvalue(struct al_linked_value_iter_t *v_iterp);
+
+/*
+ * Rewind value iteration.
+ * return -3, iterp is NULL
+ */
+int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
+
+
+/*** iterators for priority queue hash */
+/*
+ * advance iterator pointed to pq_hash
+ *  sort_value 0: item appears arbitary order.
+ *             1: item appears dictionary order of key
+ *             2: item appears counter dictionary order of key
+ *          else: return -7
+ *  al_link_value_cmp() is applied to compare the value.
+ */
+int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
+			struct al_pqueue_value_iter_t **v_iterp);
+
+/*
+ * destroy iterator
+ * return -3, v_iterp NULL
+ */
+int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp);
+
+/*
+ * advance priority queue value iterator
+ * return -1, reached end
+ * return -3, v_iterp NULL
+ */
+int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
+			 link_value_t *keyp, value_t *ret_count);
+
+/*
+ * Return number of values belong to value iterator.
+ * return -3, v_iterp NULL
+ */
+int al_pqueue_hash_nvalue(struct al_pqueue_value_iter_t *v_iterp);
+
+/*
+ * Rewind value iteration.
+ * return -3, iterp is NULL
+ */
+int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
 
 
 /*
@@ -340,6 +380,36 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
  *   Sorted iterator is implemented using array of pointer
  *   pointed to each hash item. So, the array may be very large.
  */
+
+/*
+ *  priority queue, implemented by skiplist
+ */
+typedef value_t pq_value_t;
+typedef link_value_t pq_key_t;
+
+struct al_skiplist_t;
+struct al_skiplist_iter_t;
+
+int al_create_skiplist(struct al_skiplist_t **slp, int sort_order);
+int al_free_skiplist(struct al_skiplist_t *sl);
+int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp);
+int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v);
+int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
+int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
+
+int sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v);
+int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n);
+int sl_delete(struct al_skiplist_t *sl, pq_key_t key);
+int sl_delete_force(struct al_skiplist_t *sl, pq_key_t key);
+int sl_key(struct al_skiplist_t *sl, pq_key_t key);
+int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
+
+int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v);
+int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n);
+
+int sl_empty_p(struct al_skiplist_t *sl);
+unsigned long sl_n_entries(struct al_skiplist_t *sl);
+int sl_stat_skiplist(struct al_skiplist_t *sl);
 
 /*
  *   utility

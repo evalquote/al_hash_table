@@ -2,7 +2,7 @@ Yet another reinventing the hash table library, sorry.
 
 in C, NOT thread safe, with iterator.
 
-API are as follows. (from hash.h)
+API are as follows. (from hash.h, not updated)
     
     int al_init_hash(int bit, struct al_hash_t **htp)
     int al_free_hash(struct al_hash_t *ht)
