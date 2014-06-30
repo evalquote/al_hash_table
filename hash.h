@@ -76,7 +76,7 @@ struct al_hash_stat_t {
 typedef unsigned long al_chain_length_t[11];
 
 /* default bit size of hash table */
-#define DEFAULT_HASH_BIT 15
+#define AL_DEFAULT_HASH_BIT 15
 
 /*
  * User API
@@ -87,7 +87,7 @@ typedef unsigned long al_chain_length_t[11];
 
 /*
  * create hash table
- * bit == 0, use DEFAULT_HASH_BIT
+ * bit == 0, use AL_DEFAULT_HASH_BIT
  * return -2, cannot alloc memories
  * return -3, htp is NULL
  */
@@ -409,7 +409,7 @@ int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret
 
 int sl_empty_p(struct al_skiplist_t *sl);
 unsigned long sl_n_entries(struct al_skiplist_t *sl);
-int sl_stat_skiplist(struct al_skiplist_t *sl);
+int sl_skiplist_stat(struct al_skiplist_t *sl);
 
 /*
  *   utility

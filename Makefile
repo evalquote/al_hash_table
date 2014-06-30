@@ -9,4 +9,4 @@ count:	hash.o count.o
 hash.o:	hash.h hash.c
 
 clean:
-	rm -rf count *.o *.dSYM a.out *.zip *~ 
+	rm -rf count *.o *.dSYM a.out *.zip *~

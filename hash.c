@@ -5,6 +5,10 @@
 #include "hash.h"
 #undef AL_HASH_O
 
+#undef AL_HASH_KEY_SORT_NUMERIC
+#undef AL_HASH_VALUE_SORT_NUMERIC
+#undef SL_SORT_NUMERIC
+
 /* type of linked value */
 typedef  struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
 
@@ -98,7 +102,7 @@ hash_fn(char *cp)
 }
 #endif
 
-uint32_t
+static uint32_t
 al_hash_fn_i(const char *cp)
 {
   uint32_t hv = 2166136261U;
@@ -285,8 +289,7 @@ init_hash(int bit, struct al_hash_t **htp)
   struct al_hash_t *al_hash = (struct al_hash_t *)calloc(1, sizeof(struct al_hash_t));
   if (!al_hash) return -2;
 
-  if (bit == 0)
-    bit = DEFAULT_HASH_BIT;
+  if (bit == 0) bit = AL_DEFAULT_HASH_BIT;
 
   int ret = resize_hash(bit, al_hash);
   if (ret) return ret;
@@ -418,7 +421,7 @@ add_chain_to_array(struct item **it_array, unsigned int index,
   return index;
 }
 
-#if 1
+#ifndef AL_HASH_KEY_SORT_NUMERIC
 static int
 it_cmp(const void *a, const void *b)
 {
@@ -701,7 +704,7 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp)
   return iterp ? iterp->ht : NULL;
 }
 
-#if 1
+#ifndef AL_HASH_VALUE_SORT_NUMERIC
 static int
 v_cmp(const void *a, const void *b)
 {
@@ -1242,7 +1245,6 @@ al_out_hash_stat(struct al_hash_t *ht, const char *title)
  *  priority queue, implemented by skiplist
  */
 
-#undef SL_SORT_NUMERIC
 #define SL_MAX_LEVEL 31
 
 struct node {
@@ -1294,12 +1296,14 @@ pq_k_cmp(struct al_skiplist_t *sl, pq_key_t a, pq_key_t b)
 #endif
 
 int
-sl_stat_skiplist(struct al_skiplist_t *sl)
+sl_skiplist_stat(struct al_skiplist_t *sl)
 {
   struct node *nd;
   int i;
 
-  for (i = 0; i <= SL_MAX_LEVEL; i++) {
+  if (!sl) return -3;
+  fprintf(stderr, "level %d  n_entries %lu\n", sl->level, sl->n_entries);
+  for (i = 0; i < sl->level; i++) {
     long count = 0;
     fprintf(stderr, "[%02d]: ", i);
 
@@ -1451,8 +1455,6 @@ sl_delete(struct al_skiplist_t *sl, pq_key_t key)
   return 0;
 }
 
-extern uint32_t al_hash_fn_i(const char *cp);
-
 static int
 get_level(pq_key_t key)
 {
@@ -1472,13 +1474,6 @@ node_set(struct al_skiplist_t *sl, pq_key_t key, struct node *update[], struct n
 
   int i, level;
 
-#if 0
-  if (!sl || !key) return -3;
-  if ((nd = find_node(sl, key, update))) {
-    nd->count++;
-    nd->u.value = v;
-  }
-#endif
   level = get_level(key);
   new_node = mk_node(level, key);
   if (!new_node) return -2;
@@ -1566,8 +1561,8 @@ sl_key(struct al_skiplist_t *sl, pq_key_t key)
 
 int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
 {
-  struct node  *update[SL_MAX_LEVEL];
-  struct node  *nd;
+  struct node *update[SL_MAX_LEVEL];
+  struct node *nd;
   int ret;
 
   if (!sl || !key) return -3;
