@@ -620,7 +620,7 @@ al_hash_iter_end(struct al_hash_iter_t *iterp)
   detach_iter(iterp->ht, iterp);
 
   if (iterp->sorted) free((void *)iterp->sorted);
-  free(iterp);
+  free((void *)iterp);
 
   return 0;
 }
@@ -812,7 +812,7 @@ al_linked_value_iter_end(struct al_linked_value_iter_t *vip)
 {
   if (!vip) return -3;
   if (vip->sorted) free((void *)vip->sorted);
-  free(vip);
+  free((void *)vip);
   return 0;
 }
 
@@ -1569,7 +1569,6 @@ sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
     ret = sl_delete_last_node(sl);
     if (ret) return ret;
   }
-
   return 0;
 }
 #endif
@@ -1629,7 +1628,6 @@ sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, 
     ret = sl_delete_last_node(sl);
     if (ret) return ret;
   }
-
   return 0;
 }
 #endif
@@ -1676,7 +1674,7 @@ int
 al_sl_iter_end(struct al_skiplist_iter_t *iterp)
 {
   if (!iterp) return -3;
-  free(iterp);
+  free((void *)iterp);
   return 0;
 }
 
