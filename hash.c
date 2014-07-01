@@ -158,7 +158,7 @@ moving(struct al_hash_t *ht)
 }
 
 static int
-start_rehashing(struct al_hash_t *ht)
+do_rehashing(struct al_hash_t *ht)
 {
   int ret = 0;
 
@@ -184,9 +184,9 @@ static struct item *
 hash_find(struct al_hash_t *ht, char *key, unsigned int hv)
 {
   struct item *it;
-  unsigned int hindex;
+  unsigned int hindex = hv & ht->hash_mask_old;
 
-  if (ht->rehashing && ht->rehashing_front <= (hindex = (hv & ht->hash_mask_old)))
+  if (ht->rehashing && ht->rehashing_front <= hindex)
     it = ht->hash_table_old[hindex];
   else
     it = ht->hash_table[hv & ht->hash_mask];
@@ -206,9 +206,9 @@ static int
 hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
 {
   int ret = 0;
-  unsigned int hindex;
+  unsigned int hindex = hv & ht->hash_mask_old;
 
-  if (ht->rehashing && ht->rehashing_front <= (hindex = (hv & ht->hash_mask_old))) {
+  if (ht->rehashing && ht->rehashing_front <= hindex) {
     it->chain = ht->hash_table_old[hindex];
     ht->hash_table_old[hindex] = it;
     ht->n_entries_old++;
@@ -223,7 +223,7 @@ hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
       ht->n_cancel_rehashing++;
   } else if (!ht->rehashing && !ht->iterators &&
 	     ht->hash_mask * (MEAN_CHAIN_LENGTH + 1) < ht->n_entries) {
-    ret = start_rehashing(ht);
+    ret = do_rehashing(ht);
   }
   return ret;
 }
@@ -254,10 +254,10 @@ hash_delete(struct al_hash_t *ht, char *key, unsigned int hv)
 {
   struct item *it;
   struct item **place = NULL;
-  unsigned int hindex;
+  unsigned int hindex = hv & ht->hash_mask_old;
   int old = 0;
 
-  if (ht->rehashing && ht->rehashing_front <= (hindex = (hv & ht->hash_mask_old))) {
+  if (ht->rehashing && ht->rehashing_front <= hindex) {
     place = &ht->hash_table_old[hindex];
     old = 1;
   } else {
@@ -1114,9 +1114,9 @@ add_value_to_pq(struct al_hash_t *ht, char *key, link_value_t v)
 
   /* error return */
  free_key:
-  free((void *) it->key);
+  free((void *)it->key);
  free:
-  free((void *) it);
+  free((void *)it);
   al_free_skiplist(sl);
   return ret;
 }
@@ -1246,25 +1246,25 @@ al_out_hash_stat(struct al_hash_t *ht, const char *title)
  */
 
 #define SL_MAX_LEVEL 31
+#undef SL_FIRST_KEY
+#define SL_LAST_KEY
 
-struct node {
+struct slnode_t {
   pq_key_t key;
   union {
     pq_value_t value;
   } u;
-  struct node *forward[1];
+  struct slnode_t *forward[1];
 };
 
-#undef SL_FIRST_KEY
-#define SL_LAST_KEY
-
 struct al_skiplist_t {
-  struct node *head;
+  struct slnode_t *head;
 #ifdef SL_FIRST_KEY
   pq_key_t first_key;
 #endif
 #ifdef SL_LAST_KEY
   pq_key_t last_key;
+  struct slnode_t *last_node;
 #endif
   unsigned long n_entries;
   int level;
@@ -1273,7 +1273,7 @@ struct al_skiplist_t {
 
 struct al_skiplist_iter_t {
   struct al_skiplist_t *slp;
-  struct node *current_nd;
+  struct slnode_t *current_node;
 };
 
 #ifndef SL_SORT_NUMERIC
@@ -1298,57 +1298,60 @@ pq_k_cmp(struct al_skiplist_t *sl, pq_key_t a, pq_key_t b)
 int
 sl_skiplist_stat(struct al_skiplist_t *sl)
 {
-  struct node *nd;
+  struct slnode_t *np;
   int i;
 
   if (!sl) return -3;
-  fprintf(stderr, "level %d  n_entries %lu\n", sl->level, sl->n_entries);
+  fprintf(stderr, "level %d  n_entries %lu  last '%s'\n",
+	  sl->level, sl->n_entries, sl->last_key);
   for (i = 0; i < sl->level; i++) {
     long count = 0;
     fprintf(stderr, "[%02d]: ", i);
 
-    for (nd = sl->head->forward[i]; nd; nd = nd->forward[i])
+    for (np = sl->head->forward[i]; np; np = np->forward[i]) {
+      // fprintf(stderr, "%s/%d(%p) ", np->key, np->nlevel, np);
       count++;
+    }
     fprintf(stderr, "%ld\n", count);
   }
 
   return 0;
 }
 
-static struct node *
-find_node(struct al_skiplist_t *sl, pq_key_t key, struct node *update[])
+static struct slnode_t *
+find_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[])
 {
   int i;
-  struct node *nd = sl->head;
+  struct slnode_t *np = sl->head;
   for (i = sl->level - 1; 0 <= i; --i) {
-    while (nd->forward[i]) {
-      int c = pq_k_cmp(sl, nd->forward[i]->key, key);
+    while (np->forward[i]) {
+      int c = pq_k_cmp(sl, np->forward[i]->key, key);
       if (c < 0) {
-	nd = nd->forward[i];
+	np = np->forward[i];
       } else if (c == 0) { // key found
-	return nd->forward[i];
+	return np->forward[i];
       } else {
 	break;
       }
     }
-    update[i] = nd;
+    update[i] = np;
   }
   return NULL;
 }
 
-static struct node *
+static struct slnode_t *
 mk_node(int level, pq_key_t key)
 {
-  struct node *nd = (struct node *)calloc(1, sizeof(struct node) + level * sizeof(struct node *));
-  if (!nd) return NULL;
+  struct slnode_t *np = (struct slnode_t *)calloc(1, sizeof(struct slnode_t) + level * sizeof(struct slnode_t *));
+  if (!np) return NULL;
 
-  nd->key = strdup(key);
-  if (!nd->key) {
-    free((void *)nd);
+  np->key = strdup(key);
+  if (!np->key) {
+    free((void *)np);
     return NULL;
   }
 
-  return nd;
+  return np;
 }
 
 int
@@ -1374,6 +1377,7 @@ al_create_skiplist(struct al_skiplist_t **slp, int sort_order)
 #endif
 #ifdef SL_LAST_KEY
   sl->last_key = "";
+  sl->last_node = NULL;
 #endif
   sl->n_entries = 0;
   *slp = sl;
@@ -1385,82 +1389,112 @@ al_free_skiplist(struct al_skiplist_t *sl)
 {
   if (!sl) return -3;
 
-  struct node *nd, *next;
-  nd = sl->head->forward[0];
+  struct slnode_t *np, *next;
+  np = sl->head->forward[0];
+
+  while (np) {
+    next = np->forward[0];
+    free((void *)np->key);
+    free((void *)np);
+    np = next;
+  }
   free((void *)sl->head->key);
   free((void *)sl->head);
-
-  while (nd) {
-    next = nd->forward[0];
-    free((void *)nd->key);
-    free((void *)nd);
-    nd = next;
-  }
   free((void *)sl);
   return 0;
 }
 
 static void
-delete_node(struct al_skiplist_t *sl, struct node *nd, struct node **update)
+sl_delete_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *np, struct slnode_t **update)
 {
   int i;
-  for (i = 0; i < sl->level; i++)
-    if (update[i]->forward[i] == nd)
-      update[i]->forward[i] = nd->forward[i];
-
-#ifdef SL_LAST_KEY
-  if (update[0]->forward[0] == NULL)
-    sl->last_key = update[0]->key;
+#ifdef SL_FIRST_KEY
+  int c = strcmp(sl->first_key, key);  // eq check, insted of pq_k_cmp()
 #endif
 
+  for (i = 0; i < sl->level; i++)
+    if (update[i]->forward[i] == np)
+      update[i]->forward[i] = np->forward[i];
+
+#ifdef SL_LAST_KEY
+  if (update[0]->forward[0] == NULL) {
+    sl->last_key = update[0]->key;
+    sl->last_node = update[0];
+  }
+#endif
   for (--i; 0 <= i; --i) {
     if (sl->head->forward[i] == NULL)
       sl->level--;
   }
+
+  free((void *)np->key);
+  free((void *)np);
+  sl->n_entries--;
+#ifdef SL_FIRST_KEY
+  if (c == 0) {
+    if (sl->head->forward[0] == NULL)
+      sl->first_key = "";
+    else
+      sl->first_key = sl->head->forward[0]->key;
+  }
+#endif
 }
 
 int
 sl_delete(struct al_skiplist_t *sl, pq_key_t key)
 {
-  struct node *update[SL_MAX_LEVEL], *nd;
+  struct slnode_t *update[SL_MAX_LEVEL], *np;
   int i;
 
   if (!sl || !key) return -3;
-  nd = sl->head;
+
+  np = sl->head;
   for (i = sl->level - 1; 0 <= i; --i) {
-    while (nd->forward[i] && pq_k_cmp(sl, nd->forward[i]->key, key) < 0)
-      nd = nd->forward[i];
-    update[i] = nd;
+    while (np->forward[i] && pq_k_cmp(sl, np->forward[i]->key, key) < 0)
+      np = np->forward[i];
+    update[i] = np;
   }
 
-  nd = nd->forward[0];
+  np = np->forward[0];
+  if (!np || strcmp(np->key, key) != 0) return 0;
 
-  if (nd && strcmp(nd->key, key) == 0) { // pq_k_cmp()
-#ifdef SL_FIRST_KEY
-    int c = strcmp(sl->first_key, key);  // pq_k_cmp()
-#endif
-    delete_node(sl, nd, update);
-    free((void *)nd->key);
-    free((void *)nd);
-    sl->n_entries--;
-#ifdef SL_FIRST_KEY
-    if (c == 0) {
-      if (sl->head->forward[0] == NULL)
-	sl->first_key = "";
-      else
-	sl->first_key = sl->head->forward[0]->key;
-    }
-#endif
-  }
+  sl_delete_node(sl, key, np, update);
   return 0;
 }
+
+#ifdef SL_LAST_KEY
+int
+sl_delete_last_node(struct al_skiplist_t *sl)
+{
+  struct slnode_t *update[SL_MAX_LEVEL], *np, *lnode, *p;
+  int i;
+
+  if (!sl) return -3;
+  lnode = sl->last_node;
+  np = sl->head;
+  for (i = sl->level - 1; 0 <= i; --i) {  // start from top level
+    for (;;) {
+      p = np->forward[i];
+      if (!p || p == lnode) break;
+      np = p;
+    }
+    update[i] = np;
+  }
+
+  np = np->forward[0];
+  if (!np || np != lnode) return 0;
+
+  sl_delete_node(sl, sl->last_key, np, update);
+  return 0;
+}
+#endif
 
 static int
 get_level(pq_key_t key)
 {
   int level = 1;
   uint32_t r = al_hash_fn_i(key);
-  while (r & 1) { // p is 0.5,  "(r&3)==0": p is 0.25, "(r&3)!=0": p is 0.75
+  while (r & 1) { // "r&1": p is 0.5,  "(r&3)==0": p is 0.25, "(r&3)!=0": p is 0.75
     level++;
     r >>= 1;
   }
@@ -1468,9 +1502,9 @@ get_level(pq_key_t key)
 }
 
 static int
-node_set(struct al_skiplist_t *sl, pq_key_t key, struct node *update[], struct node **ret_nd)
+node_set(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[], struct slnode_t **ret_np)
 {
-  struct node *new_node;
+  struct slnode_t *new_node;
   int i, level;
 
   level = get_level(key);
@@ -1492,27 +1526,29 @@ node_set(struct al_skiplist_t *sl, pq_key_t key, struct node *update[], struct n
   sl->first_key = sl->head->forward[0]->key;
 #endif
 #ifdef SL_LAST_KEY
-  if (new_node->forward[0] == NULL)
+  if (new_node->forward[0] == NULL) {
     sl->last_key = new_node->key;
+    sl->last_node = new_node;
+  }
 #endif
   sl->n_entries++;
-  *ret_nd = new_node;
+  *ret_np = new_node;
   return 0;
 }
 
 int
 sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v)
 {
-  struct node  *update[SL_MAX_LEVEL];
-  struct node  *nd;
+  struct slnode_t  *update[SL_MAX_LEVEL];
+  struct slnode_t  *np;
   int ret;
 
   if (!sl || !key) return -3;
-  if (!(nd = find_node(sl, key, update))) {
-    ret = node_set(sl, key, update, &nd);
+  if (!(np = find_node(sl, key, update))) {
+    ret = node_set(sl, key, update, &np);
     if (ret) return ret;
   }
-  nd->u.value = v;
+  np->u.value = v;
   return 0;
 }
 
@@ -1530,7 +1566,7 @@ sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
   if (ret) return ret;
 
   while (max_n < sl->n_entries) {
-    ret = sl_delete(sl, sl->last_key);
+    ret = sl_delete_last_node(sl);
     if (ret) return ret;
   }
 
@@ -1543,10 +1579,10 @@ sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v)
 {
   if (!sl || !key) return -3;
 
-  struct node *nd;
-  struct node *update[SL_MAX_LEVEL];
-  if ((nd = find_node(sl, key, update))) {
-    if (ret_v) *ret_v = nd->u.value;
+  struct slnode_t *np;
+  struct slnode_t *update[SL_MAX_LEVEL];
+  if ((np = find_node(sl, key, update))) {
+    if (ret_v) *ret_v = np->u.value;
     return 0; // found
   }
   return -1; // not found
@@ -1558,25 +1594,27 @@ sl_key(struct al_skiplist_t *sl, pq_key_t key)
   return sl_get(sl, key, NULL);
 }
 
-int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
+int
+sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
 {
-  struct node *update[SL_MAX_LEVEL];
-  struct node *nd;
+  struct slnode_t *update[SL_MAX_LEVEL];
+  struct slnode_t *np;
   int ret;
 
   if (!sl || !key) return -3;
-  if (!(nd = find_node(sl, key, update))) {
-    ret = node_set(sl, key, update, &nd);
+  if (!(np = find_node(sl, key, update))) {
+    ret = node_set(sl, key, update, &np);
     if (ret) return ret;
-    nd->u.value = (value_t)off;
+    np->u.value = (value_t)off;
   } else {
-    nd->u.value += off;
-    if (ret_v) *ret_v = nd->u.value;
+    np->u.value += off;
+    if (ret_v) *ret_v = np->u.value;
   }
   return 0;
 }
 #ifdef SL_LAST_KEY
-int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n)
+int
+sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n)
 {
   if (!sl || !key) return -3;
 
@@ -1588,7 +1626,7 @@ int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret
   if (ret) return ret;
 
   while (max_n < sl->n_entries) {
-    ret = sl_delete(sl, sl->last_key);
+    ret = sl_delete_last_node(sl);
     if (ret) return ret;
   }
 
@@ -1610,43 +1648,46 @@ sl_n_entries(struct al_skiplist_t *sl)
   return sl->n_entries;
 }
 
-int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp)
+int
+al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp)
 {
   if (!sl) return -3;
   struct al_skiplist_iter_t *itr = (struct al_skiplist_iter_t *)malloc(sizeof(struct al_skiplist_iter_t));
   if (!itr) return -2;
   itr->slp = sl;
-  itr->current_nd = sl->head->forward[0];
+  itr->current_node = sl->head->forward[0];
   *iterp = itr;
   return 0;
 }
 
-int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
+int
+al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
 {
   if (!iterp) return -3;
-  if (!iterp->current_nd) return -1;
-  *keyp = iterp->current_nd->key;
-  if (ret_v) *ret_v = iterp->current_nd->u.value;
-  iterp->current_nd = iterp->current_nd->forward[0];
+  if (!iterp->current_node) return -1;
+  *keyp = iterp->current_node->key;
+  if (ret_v) *ret_v = iterp->current_node->u.value;
+  iterp->current_node = iterp->current_node->forward[0];
 
   return 0;
 }
 
-int al_sl_iter_end(struct al_skiplist_iter_t *iterp)
+int
+al_sl_iter_end(struct al_skiplist_iter_t *iterp)
 {
   if (!iterp) return -3;
   free(iterp);
   return 0;
 }
 
-int al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
+int
+al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
 {
   if (!itr) return 3;
   struct al_skiplist_t *sl = itr->slp;
-  itr->current_nd = sl->head->forward[0];
+  itr->current_node = sl->head->forward[0];
   return 0;
 }
-
 
 /***/
 

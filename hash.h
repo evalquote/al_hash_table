@@ -376,7 +376,7 @@ int sl_skiplist_stat(struct al_skiplist_t *sl);
 int sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v);
 int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n);
 int sl_delete(struct al_skiplist_t *sl, pq_key_t key);
-int sl_delete_force(struct al_skiplist_t *sl, pq_key_t key);
+int sl_delete_last_node(struct al_skiplist_t *sl);
 int sl_key(struct al_skiplist_t *sl, pq_key_t key);
 int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
 
