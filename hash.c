@@ -1,3 +1,13 @@
+/*
+ * The hash function used here is FNV, 
+ *   <http://www.isthe.com/chongo/tech/comp/fnv/>
+ */
+
+/*
+ *   Use and distribution licensed under the BSD license.  See
+ *   the LICENSE file for full text.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -184,9 +194,9 @@ static struct item *
 hash_find(struct al_hash_t *ht, char *key, unsigned int hv)
 {
   struct item *it;
-  unsigned int hindex = hv & ht->hash_mask_old;
+  unsigned int hindex;
 
-  if (ht->rehashing && ht->rehashing_front <= hindex)
+  if (ht->rehashing && ht->rehashing_front <= (hindex = (hv & ht->hash_mask_old)))
     it = ht->hash_table_old[hindex];
   else
     it = ht->hash_table[hv & ht->hash_mask];
@@ -206,9 +216,9 @@ static int
 hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
 {
   int ret = 0;
-  unsigned int hindex = hv & ht->hash_mask_old;
+  unsigned int hindex;
 
-  if (ht->rehashing && ht->rehashing_front <= hindex) {
+  if (ht->rehashing && ht->rehashing_front <= (hindex = (hv & ht->hash_mask_old))) {
     it->chain = ht->hash_table_old[hindex];
     ht->hash_table_old[hindex] = it;
     ht->n_entries_old++;
@@ -254,10 +264,10 @@ hash_delete(struct al_hash_t *ht, char *key, unsigned int hv)
 {
   struct item *it;
   struct item **place = NULL;
-  unsigned int hindex = hv & ht->hash_mask_old;
+  unsigned int hindex;
   int old = 0;
 
-  if (ht->rehashing && ht->rehashing_front <= hindex) {
+  if (ht->rehashing && ht->rehashing_front <= (hindex = (hv & ht->hash_mask_old))) {
     place = &ht->hash_table_old[hindex];
     old = 1;
   } else {
@@ -1263,7 +1273,7 @@ struct al_skiplist_t {
   pq_key_t first_key;
 #endif
 #ifdef SL_LAST_KEY
-  pq_key_t last_key;
+  // pq_key_t last_key;
   struct slnode_t *last_node;
 #endif
   unsigned long n_entries;
@@ -1303,7 +1313,7 @@ sl_skiplist_stat(struct al_skiplist_t *sl)
 
   if (!sl) return -3;
   fprintf(stderr, "level %d  n_entries %lu  last '%s'\n",
-	  sl->level, sl->n_entries, sl->last_key);
+	  sl->level, sl->n_entries, sl->last_node->key);
   for (i = 0; i < sl->level; i++) {
     long count = 0;
     fprintf(stderr, "[%02d]: ", i);
@@ -1376,8 +1386,7 @@ al_create_skiplist(struct al_skiplist_t **slp, int sort_order)
   sl->first_key = "";
 #endif
 #ifdef SL_LAST_KEY
-  sl->last_key = "";
-  sl->last_node = NULL;
+  sl->last_node = sl->head;
 #endif
   sl->n_entries = 0;
   *slp = sl;
@@ -1418,7 +1427,6 @@ sl_delete_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *np, stru
 
 #ifdef SL_LAST_KEY
   if (update[0]->forward[0] == NULL) {
-    sl->last_key = update[0]->key;
     sl->last_node = update[0];
   }
 #endif
@@ -1484,7 +1492,7 @@ sl_delete_last_node(struct al_skiplist_t *sl)
   np = np->forward[0];
   if (!np || np != lnode) return 0;
 
-  sl_delete_node(sl, sl->last_key, np, update);
+  sl_delete_node(sl, sl->last_node->key, np, update);
   return 0;
 }
 #endif
@@ -1527,7 +1535,6 @@ node_set(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[], stru
 #endif
 #ifdef SL_LAST_KEY
   if (new_node->forward[0] == NULL) {
-    sl->last_key = new_node->key;
     sl->last_node = new_node;
   }
 #endif
@@ -1561,7 +1568,7 @@ sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
   if (max_n == 0 || sl->n_entries < max_n)
     return sl_set(sl, key, v);
 
-  if (pq_k_cmp(sl, sl->last_key, key) <= 0) return 0;
+  if (pq_k_cmp(sl, sl->last_node->key, key) <= 0) return 0;
   int ret = sl_set(sl, key, v);
   if (ret) return ret;
 
@@ -1620,7 +1627,7 @@ sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, 
   if (max_n == 0 || sl->n_entries < max_n)
     return sl_inc_init(sl, key, off, ret_v);
 
-  if (pq_k_cmp(sl, sl->last_key, key) < 0) return 0;
+  if (pq_k_cmp(sl, sl->last_node->key, key) < 0) return 0;
   int ret = sl_inc_init(sl, key, off, ret_v);
   if (ret) return ret;
 
@@ -1702,38 +1709,73 @@ al_gettok(char *cp, char **savecp, char del)
   return cp;
 }
 
-#if 0
-void
-al_split_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, char del)
-{
-  char **ap;
-  strncpy(tmp_cp, str, tmp_size);
-  for (ap = elms;;) {
-    *ap++ = al_gettok(tmp_cp, &tmp_cp, del);
-    if (!tmp_cp || &elms[size] <= ap) break;
-  }
-  while (ap < &elms[size]) *ap++ = NULL;
-}
-#endif
-
-void
+int
 al_split_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels)
 {
-  char **ap;
-  strncpy(tmp_cp, str, tmp_size);
-  for (ap = elms; (*ap = strsep(&tmp_cp, dels)) != NULL;)
-    if (++ap >= &elms[size]) break;
+  char **ap = elms;
+  if (!elms || !tmp_cp) return -1;
+  if (str) {
+    strncpy(tmp_cp, str, tmp_size);
+    while ((*ap = strsep(&tmp_cp, dels)) != NULL) {
+      if (++ap >= &elms[size]) break;
+    }
+  }
+  int r = ap - &elms[0];
   while (ap < &elms[size]) *ap++ = NULL;
+  return r;
 }
 
-void
+int
+al_split_impl_n(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels, int n)
+{
+  char **ap = elms;
+  if (!elms || !tmp_cp) return -1;
+  if (str) {
+    strncpy(tmp_cp, str, tmp_size);
+    while (0 < --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
+      if (++ap >= &elms[size]) break;
+    }
+    if (tmp_cp && n <= 0) *ap++ = tmp_cp;
+  }
+  int r = ap - &elms[0];
+  while (ap < &elms[size]) *ap++ = NULL;
+  return r;
+}
+
+int
 al_split_nn_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels)
 {
-  char **ap;
-  strncpy(tmp_cp, str, tmp_size);
-  for (ap = elms; (*ap = strsep(&tmp_cp, dels)) != NULL;)
-    if (*ap != '\0' && ++ap >= &elms[size]) break;
+  char **ap = elms;
+  if (!elms || !tmp_cp) return -1;
+  if (str) {
+    strncpy(tmp_cp, str, tmp_size);
+    while ((*ap = strsep(&tmp_cp, dels)) != NULL) {
+      if (**ap != '\0' && ++ap >= &elms[size]) break;
+    }
+  }
+  int r = ap - &elms[0];
   while (ap < &elms[size]) *ap++ = NULL;
+  return r;
+}
+
+int
+al_split_nn_n_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels, int n)
+{
+  char **ap = elms;
+  if (!elms || !tmp_cp) return -1;
+  if (str) {
+    strncpy(tmp_cp, str, tmp_size);
+    --n;
+    while (0 < n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
+      if (**ap == '\0') continue;
+      if (++ap >= &elms[size]) break;
+      --n;
+    }
+    if (tmp_cp && n <= 0) *ap++ = tmp_cp;
+  }
+  int r = ap - &elms[0];
+  while (ap < &elms[size]) *ap++ = NULL;
+  return r;
 }
 
 /****************************/

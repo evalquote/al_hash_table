@@ -1,5 +1,8 @@
 /* hash table libraries */
-/* y.amagai 2014.5 */
+/* 
+ *  Use and distribution licensed under the BSD license.  See
+ *  the LICENSE file for full text.
+ */
 
 /* NOT thread safe */
 
@@ -414,8 +417,10 @@ al_gettok(char *cp, char **savecp, char del);
  *  elms== "abc", "def", "", "ghi", NULL
  * 
  */
-void al_split_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
+int al_split_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
+int al_split_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del, int n);
 #define al_split(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
+#define al_split_n(elms, tmp, str, del, n) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
 /* not return nul */
 /*
@@ -424,7 +429,8 @@ void al_split_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const
  *  elms== "abc", "def", "ghi", NULL, NULL
  */
 
-void al_split_nn_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
-#define al_split_nn(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
+int al_split_nn_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
+int al_split_nn_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del, int n);
+#define al_split_nn_n(elms, tmp, str, del, n) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
 #endif
