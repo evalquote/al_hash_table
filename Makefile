@@ -4,7 +4,7 @@ CFLAGS=	-O3 -g -Wall
 
 all:	count
 
-count:	hash.o count.o
+count:	hash.o count.o strlcpy.o
 
 hash.o:	hash.h hash.c
 

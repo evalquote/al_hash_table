@@ -413,24 +413,25 @@ al_gettok(char *cp, char **savecp, char del);
 
 /*
  *  char *elms[5], tmp[100];
- *  al_split(elms, tmp, "abc\tdef\t\tghi", '\t');
+ *  al_split(elms, tmp, "abc\tdef\t\tghi", "\t");
  *  elms== "abc", "def", "", "ghi", NULL
  * 
  */
 int al_split_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
 int al_split_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del, int n);
 #define al_split(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
-#define al_split_n(elms, tmp, str, del, n) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
+#define al_split_n(elms, tmp, str, del, n) al_split_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
 /* not return nul */
 /*
  *  char *elms[5], tmp[100];
- *  al_split_nn(elms, tmp, "abc\tdef\t\tghi", '\t');
+ *  al_split_nn(elms, tmp, "abc\tdef\t\tghi", "\t");
  *  elms== "abc", "def", "ghi", NULL, NULL
  */
 
 int al_split_nn_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
 int al_split_nn_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del, int n);
-#define al_split_nn_n(elms, tmp, str, del, n) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
+#define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
+#define al_split_nn_n(elms, tmp, str, del, n) al_split_nn_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
 #endif

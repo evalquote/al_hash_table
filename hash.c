@@ -20,7 +20,7 @@
 #undef SL_SORT_NUMERIC
 
 /* type of linked value */
-typedef  struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
+typedef struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
 
 #define MEAN_CHAIN_LENGTH 2
 
@@ -1546,8 +1546,8 @@ node_set(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[], stru
 int
 sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v)
 {
-  struct slnode_t  *update[SL_MAX_LEVEL];
-  struct slnode_t  *np;
+  struct slnode_t *update[SL_MAX_LEVEL];
+  struct slnode_t *np;
   int ret;
 
   if (!sl || !key) return -3;
@@ -1713,9 +1713,11 @@ int
 al_split_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels)
 {
   char **ap = elms;
-  if (!elms || !tmp_cp) return -1;
+  if (!elms || !tmp_cp) return -3;
   if (str) {
-    strncpy(tmp_cp, str, tmp_size);
+    // strncpy(tmp_cp, str, tmp_size);
+    size_t ret = strlcpy(tmp_cp, str, tmp_size);
+    if (tmp_size <= ret) return -8;
     while ((*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (++ap >= &elms[size]) break;
     }
@@ -1726,12 +1728,14 @@ al_split_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str
 }
 
 int
-al_split_impl_n(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels, int n)
+al_split_n_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels, int n)
 {
   char **ap = elms;
-  if (!elms || !tmp_cp) return -1;
+  if (!elms || !tmp_cp) return -3;
   if (str) {
-    strncpy(tmp_cp, str, tmp_size);
+    // strncpy(tmp_cp, str, tmp_size);
+    size_t ret = strlcpy(tmp_cp, str, tmp_size);
+    if (tmp_size <= ret) return -8;
     while (0 < --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (++ap >= &elms[size]) break;
     }
@@ -1746,9 +1750,11 @@ int
 al_split_nn_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels)
 {
   char **ap = elms;
-  if (!elms || !tmp_cp) return -1;
+  if (!elms || !tmp_cp) return -3;
   if (str) {
-    strncpy(tmp_cp, str, tmp_size);
+    // strncpy(tmp_cp, str, tmp_size);
+    size_t ret = strlcpy(tmp_cp, str, tmp_size);
+    if (tmp_size <= ret) return -8;
     while ((*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (**ap != '\0' && ++ap >= &elms[size]) break;
     }
@@ -1762,9 +1768,11 @@ int
 al_split_nn_n_impl(char **elms, int size, char *tmp_cp, int tmp_size, const char *str, const char *dels, int n)
 {
   char **ap = elms;
-  if (!elms || !tmp_cp) return -1;
+  if (!elms || !tmp_cp) return -3;
   if (str) {
-    strncpy(tmp_cp, str, tmp_size);
+    // strncpy(tmp_cp, str, tmp_size);
+    size_t ret = strlcpy(tmp_cp, str, tmp_size);
+    if (tmp_size <= ret) return -8;
     --n;
     while (0 < n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (**ap == '\0') continue;
