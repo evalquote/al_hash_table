@@ -1,5 +1,5 @@
 /* hash table libraries */
-/* 
+/*
  *  Use and distribution licensed under the BSD license.  See
  *  the LICENSE file for full text.
  */
@@ -15,6 +15,13 @@ typedef long value_t;
 
 /* type of hash entry link value */
 typedef const char * link_value_t;
+
+/* sort order */
+#define AL_SORT_NO		0x0
+#define AL_SORT_DIC		0x1
+#define AL_SORT_COUNTER_DIC	0x2
+#define AL_SORT_NUMERIC		0x4
+#define AL_SORT_VALUE		0x8
 
 #ifdef AL_HASH_O
 void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
@@ -92,6 +99,11 @@ typedef unsigned long al_chain_length_t[11];
 /*
  * create hash table
  * bit == 0, use AL_DEFAULT_HASH_BIT
+ *
+ *  al_init_pqueue_hash()
+ *  sort_order AL_SORT_DIC:         item appears dictionary order of key
+ *             AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
+ *             logior AL_SORT_NUMERIC: sort string numeric
  */
 int al_init_hash(int bit, struct al_hash_t **htp);
 int al_init_linked_hash(int bit, struct al_hash_t **htp);
@@ -112,8 +124,8 @@ int al_free_hash(struct al_hash_t *ht);
  * if acl is NULL, no chain statistics returned
  *   (counting chain length needs some CPU resources)
  */
-int al_hash_stat(struct al_hash_t *ht, 
-		 struct al_hash_stat_t *statp, 
+int al_hash_stat(struct al_hash_t *ht,
+		 struct al_hash_stat_t *statp,
 		 al_chain_length_t acl);
 
 int al_out_hash_stat(struct al_hash_t *ht, const char *title);
@@ -153,11 +165,11 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
  * return -1, key is not found
  * return -5, iterators are attached on the hash table
  *            (only item_delete and item_delete_pv)
- * 
- * if pointer for return value (ret-v, ret_pv) is NULL, ignore it
+ *
+ * if pointer for return value (ret_v, ret_pv) is NULL, ignore it
  *
  * delete:
- *   either of scalor hash table and linked hash is acceptable as parameter
+ *   either of scalar hash table and linked hash is acceptable as parameter
  * replace:
  *   if key is found, replace value field by v, else return -1
  */
@@ -174,13 +186,13 @@ int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
  *   if key is found, then increment value field and
  *     set incremented value to *ret_v, and return 0
  *   if key if not found, then return -1. *ret_v is not changed.
- *  
+ *
  * item_inc_init():
  *   if key is found, then increment value field and
  *     set incremented value to *ret_v, and return 0
- *   if key if not found, add key with (valut_)off
- *     *ret_v is not changed. 
- *        return 0 on successfully key adding, 
+ *   if key if not found, add key with (value_t)off
+ *     *ret_v is not changed.
+ *        return 0 on successfully key adding,
  *        return -2, cannot alloc memories
  */
 int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
@@ -192,13 +204,16 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  * create iterator attached to ht
  *   after first al_hash_iter() call, the iterator points entries
  *    (when hash table is not empty)
- *  sort_key 0: item appears arbitary order.
- *           1: item appears dictionary order of key
- *           2: item appears counter dictionary order of key
+ *  sort AL_SORT_NO :         item appears arbitary order.
+ *       AL_SORT_DIC:         item appears dictionary order of key
+ *       AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
+ *       logior AL_SORT_NUMERIC: sort key string numeric
+ *       logior AL_SORT_VALUE: sort by value part insted of key,
+ *                                 AL_SORT_NUMERIC is ignored, if logior_ed.
  *        else: return -7
  * return -99, internal error
  */
-int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key);
+int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort);
 
 /*
  * destroy iterator
@@ -246,9 +261,10 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
 
 /*
  * advance iterator pointed to linked_hash
- *  sort_value 0: item appears arbitary order.
- *             1: item appears dictionary order of key
- *             2: item appears counter dictionary order of key
+ *  sort_value AL_SORT_NO :         item appears arbitary order.
+ *             AL_SORT_DIC:         item appears dictionary order of key
+ *             AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
+ *             logior AL_SORT_NUMERIC: sort string numeric
  *          else: return -7
  *  al_link_value_cmp() is applied to compare the value.
  */
@@ -328,8 +344,8 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *   (either key is found, or not found).
  *
  * item_delete_iter():
- *   The `key' pointer returned from al_hash_iter() is valid until 
- *   next al_hash_iter() call. 
+ *   The `key' pointer returned from al_hash_iter() is valid until
+ *   next al_hash_iter() call.
  *
  *   ex.
  *     const char *ikey;
@@ -341,7 +357,7 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *       }
  *     }
  *
- *   If iterators pointed to same hash table invoke item_delete_iter(), 
+ *   If iterators pointed to same hash table invoke item_delete_iter(),
  *   result is undefined, it may cause crash.
  *
  *   Call item_delete_iter() immediately after inserting new key/value
@@ -352,13 +368,13 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *   ok:  al_hash_iter() -> item_set() -> al_hash_iter() -> item_delete_iter()
  *   ok:  al_hash_iter() -> item_delete_iter() -> item_set() -> al_hash_iter()
  *
- * Iterators will be invalid when pointd hash table is destroyed by
- * al_free_hash().  It is still necessary to call al_hash_iter_end() 
+ * Iterators will be invalid when pointed hash table is destroyed by
+ * al_free_hash().  It is still necessary to call al_hash_iter_end()
  * on the iterators to free memory resources in the situation.
  *
  * sorted iterator:
  *   Sorted iterator is implemented using array of pointer
- *   pointed to each hash item. So, the array may be very large.
+ *   pointed to each hash item. So, the array may become very large.
  */
 
 /*
@@ -415,10 +431,10 @@ al_gettok(char *cp, char **savecp, char del);
  *  char *elms[5], tmp[100];
  *  al_split(elms, tmp, "abc\tdef\t\tghi", "\t");
  *  elms== "abc", "def", "", "ghi", NULL
- * 
+ *
  */
-int al_split_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
-int al_split_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del, int n);
+int al_split_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del);
+int al_split_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del, int n);
 #define al_split(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_n(elms, tmp, str, del, n) al_split_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
@@ -429,8 +445,8 @@ int al_split_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, cons
  *  elms== "abc", "def", "ghi", NULL, NULL
  */
 
-int al_split_nn_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del);
-int al_split_nn_n_impl(char **elms, int elms_size, char *tmp_cp, int tmp_size, const char *str, const char *del, int n);
+int al_split_nn_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del);
+int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del, int n);
 #define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_nn_n(elms, tmp, str, del, n) al_split_nn_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
