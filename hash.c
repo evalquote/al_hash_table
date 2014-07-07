@@ -50,13 +50,15 @@ struct item {
 #define HASH_FLAG_SORT_ORD	(AL_SORT_DIC|AL_SORT_COUNTER_DIC)
 #define HASH_FLAG_SORT_MASK	(HASH_FLAG_SORT_ORD|AL_SORT_NUMERIC|AL_SORT_VALUE)
 
-#define HASH_FLAG_SCALAR	0x100
-#define HASH_FLAG_STRING	0x200
-#define HASH_FLAG_LINKED	0x400
-#define HASH_FLAG_PQ		0x800
+#define HASH_FLAG_SCALAR	HASH_TYPE_SCALAR
+#define HASH_FLAG_STRING	HASH_TYPE_STRING
+#define HASH_FLAG_LINKED	HASH_TYPE_LINKED
+#define HASH_FLAG_PQ		HASH_TYPE_PQ
+#define HASH_TYPE_MASK		(HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_LINKED|HASH_FLAG_PQ)
+#define HASH_FLAG_PQ_PSET	(HASH_TYPE_PQ<<1)
 
-#define ITER_FLAG_AE		0x1000   // call end() at end of iteration
-#define ITER_FLAG_VIRTUAL	0x8000   // virtual hash_iter createed al_linked_hash_get() or al_pqueue_hash_get()
+#define ITER_FLAG_AE		0x10000   // call end() at end of iteration
+#define ITER_FLAG_VIRTUAL	0x80000   // virtual hash_iter createed al_linked_hash_get() or al_pqueue_hash_get()
 
 #define hash_size(n) (1<<(n))
 
@@ -66,7 +68,7 @@ struct al_hash_t {
   unsigned int  hash_bit;
   unsigned int  n_rehashing;
   unsigned long n_entries;	// number of items in hash_table
-  unsigned long n_entries_old;	//* number of items in hash_table_old
+  unsigned long n_entries_old;	// number of items in hash_table_old
   unsigned long n_cancel_rehashing;
 
   int rehashing;		// 1: under re-hashing
@@ -333,14 +335,16 @@ init_hash(int bit, struct al_hash_t **htp)
 }
 
 int
-al_init_hash(int bit, struct al_hash_t **htp)
+al_init_hash(int type, int bit, struct al_hash_t **htp)
 {
+  if ((type & ~HASH_TYPE_MASK) != 0 || (type & (type - 1)) != 0) return -7;
   int ret = init_hash(bit, htp);
   if (!ret)
-    (*htp)->h_flag = HASH_FLAG_SCALAR|HASH_FLAG_STRING; // select SCLAR or STRING at first set
+    (*htp)->h_flag = type;
   return ret;
 }
 
+#if 0
 int
 al_init_linked_hash(int bit, struct al_hash_t **htp)
 {
@@ -349,7 +353,25 @@ al_init_linked_hash(int bit, struct al_hash_t **htp)
     (*htp)->h_flag = HASH_FLAG_LINKED;
   return ret;
 }
+#endif
 
+int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n)
+{
+  if (!ht) return -3;
+  if (!(ht->h_flag & HASH_FLAG_PQ)) return -6;
+  if (ht->h_flag & HASH_FLAG_PQ_PSET) return -6; // parameter already set
+  int so = sort_order & HASH_FLAG_SORT_ORD;
+  if (so != AL_SORT_DIC && so != AL_SORT_COUNTER_DIC) return -7;
+
+  ht->h_flag |= so | HASH_FLAG_PQ_PSET;
+  if (sort_order & AL_SORT_NUMERIC)
+    ht->h_flag |= HASH_FLAG_SORT_NUMERIC;
+  ht->pq_max_n = max_n;
+ 
+  return 0;
+}
+
+#if 0
 int
 al_init_pqueue_hash(int bit, struct al_hash_t **htp, int sort_order, unsigned long max_n)
 {
@@ -364,6 +386,7 @@ al_init_pqueue_hash(int bit, struct al_hash_t **htp, int sort_order, unsigned lo
   }
   return ret;
 }
+#endif
 
 static void
 free_linked_value(link_t *lp)

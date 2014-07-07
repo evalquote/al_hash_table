@@ -25,7 +25,12 @@ typedef const char * link_value_t;
 #define AL_SORT_VALUE		0x8
 #define AL_FLAG_NONE		AL_SORT_NO
 /* for iterator, call end() automatically at end of iteration */
-#define AL_ITER_AE		0x1000
+#define AL_ITER_AE		0x10000
+
+#define HASH_TYPE_SCALAR	0x100
+#define HASH_TYPE_STRING	0x200
+#define HASH_TYPE_LINKED	0x400
+#define HASH_TYPE_PQ		0x800
 
 #ifdef AL_HASH_O
 void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
@@ -96,18 +101,25 @@ typedef unsigned long al_chain_length_t[11];
 
 /*
  * create hash table
+ *
+ * type: one of following type
+ *       HASH_TYPE_SCALAR
+ *       HASH_TYPE_STRING
+ *       HASH_TYPE_LINKED
+ *       HASH_TYPE_PQ
+ * 
  * bit == 0, use AL_DEFAULT_HASH_BIT
  *
- *  al_init_pqueue_hash
- *  sort_order AL_SORT_DIC:         item appears dictionary order of key
- *             AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
- *             logior AL_SORT_NUMERIC: sort string numeric
+ *  al_set_pqueue_parameter
+ *  sort_order: AL_SORT_DIC:         item appears dictionary order of key
+ *              AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
+ *              logior AL_SORT_NUMERIC: sort string numeric
+ *  max_n:      0, unlimited
  *
  * return -2 allocation fails
  */
-int al_init_hash(int bit, struct al_hash_t **htp);
-int al_init_linked_hash(int bit, struct al_hash_t **htp);
-int al_init_pqueue_hash(int bit, struct al_hash_t **htp, int sort_order, unsigned long max_n);
+int al_init_hash(int type, int bit, struct al_hash_t **htp);
+int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
 
 /*
  * destroy hash table

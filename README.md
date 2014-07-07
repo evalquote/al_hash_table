@@ -4,10 +4,9 @@ in C, NOT thread safe, with iterator.
 
 API are as follows. (from hash.h, not updated)
     
-    int al_init_hash(int bit, struct al_hash_t **htp)
-    int al_init_linked_hash(int bit, struct al_hash_t **htp)  // save value part to link
-    int al_init_pqueue_hash(int bit, struct al_hash_t **htp,  // save value part to priority queue
-                            int sort_order, unsigned long max_n)
+    int al_init_hash(int type, int bit, struct al_hash_t **htp)
+    int al_set_pqueue_parameter(struct al_hash_t *ht,
+                                int sort_order, unsigned long max_n)
     int al_free_hash(struct al_hash_t *ht)
     int al_hash_stat(struct al_hash_t *ht,
                      struct al_hash_stat_t *statp,

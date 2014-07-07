@@ -13,7 +13,7 @@ main() {
   int ret;
   char line[512];
 
-  ret = al_init_hash(AL_DEFAULT_HASH_BIT, &ht_count);
+  ret = al_init_hash(HASH_TYPE_SCALAR, AL_DEFAULT_HASH_BIT, &ht_count);
   if (ret) {
     fprintf(stderr, "init ht_count %d\n", ret);
     exit(1);
