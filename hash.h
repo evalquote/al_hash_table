@@ -16,12 +16,16 @@ typedef long value_t;
 /* type of hash entry link value */
 typedef const char * link_value_t;
 
+/* flags */
 /* sort order */
 #define AL_SORT_NO		0x0
 #define AL_SORT_DIC		0x1
 #define AL_SORT_COUNTER_DIC	0x2
 #define AL_SORT_NUMERIC		0x4
 #define AL_SORT_VALUE		0x8
+#define AL_FLAG_NONE		AL_SORT_NO
+/* for iterator, call end() automatically at end of iteration */
+#define AL_ITER_AE		0x1000
 
 #ifdef AL_HASH_O
 void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
@@ -39,11 +43,6 @@ int al_link_value(link_value_t v, link_value_t *vp) {
 }
 
 // int al_link_value(link_value_t v, link_value_t *vp) { *vp = v; return 0; }
-
-int
-al_link_value_cmp(link_value_t a, link_value_t b) {
-  return strcmp((const char *)a, (const char *)b);
-}
 #endif
 
 /* type of hash table */
@@ -92,7 +91,6 @@ typedef unsigned long al_chain_length_t[11];
  * User API
  *
  * return 0  on success
- * return -2 allocation fails
  * return -3 parameter error (provide NULL pointer)
  */
 
@@ -100,10 +98,12 @@ typedef unsigned long al_chain_length_t[11];
  * create hash table
  * bit == 0, use AL_DEFAULT_HASH_BIT
  *
- *  al_init_pqueue_hash()
+ *  al_init_pqueue_hash
  *  sort_order AL_SORT_DIC:         item appears dictionary order of key
  *             AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
  *             logior AL_SORT_NUMERIC: sort string numeric
+ *
+ * return -2 allocation fails
  */
 int al_init_hash(int bit, struct al_hash_t **htp);
 int al_init_linked_hash(int bit, struct al_hash_t **htp);
@@ -131,6 +131,11 @@ int al_hash_stat(struct al_hash_t *ht,
 int al_out_hash_stat(struct al_hash_t *ht, const char *title);
 
 /*
+ *  set error message, print out it on error and AL_ITER_AE set.
+ */
+int al_set_hash_err_msg_impl(struct al_hash_t *ht, const char *msg);
+
+/*
  * return number of attached iterators of ht  (0 <= number)
  */
 int al_hash_n_iterators(struct al_hash_t *ht);
@@ -151,11 +156,15 @@ int al_is_pqueue_iter(struct al_hash_iter_t *iterp);
  * if key is not in hash table, add it
  * else replace value field by v
  * if pv is not NULL, return previous value
+ * return -2, allocation fails
  */
 int item_set(struct al_hash_t *ht, char *key, value_t v);
 int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv);
+int item_set_str(struct al_hash_t *ht, char *key, link_value_t v);
 
 /*
+ * add value to linked hashtable or pqueue hashtable
+ * return -2, allocation fails
  * return -6, hash table type is not 'linked'
  */
 int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
@@ -165,6 +174,8 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
  * return -1, key is not found
  * return -5, iterators are attached on the hash table
  *            (only item_delete and item_delete_pv)
+ * return -6, item_set/item_get/item_replace on string_hash, or, 
+ *            item_set_str/item_get_str/item_replace_str on scalar hash
  *
  * if pointer for return value (ret_v, ret_pv) is NULL, ignore it
  *
@@ -175,25 +186,33 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
  */
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
+int item_get_str(struct al_hash_t *ht, char *key, link_value_t *v);
 int item_replace(struct al_hash_t *ht, char *key, value_t v);
 int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
+int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v);
 int item_delete(struct al_hash_t *ht, char *key);
 int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
+
+int al_linked_hash_get(struct al_hash_t *ht, char *key,
+		       struct al_linked_value_iter_t **v_iterp, int flag);
+int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
+		       struct al_pqueue_value_iter_t **v_iterp, int flag);
 
 /*
  * increment value field by off
  * item_inc():
- *   if key is found, then increment value field and
+ *   if key is found, then increment value field by 'off' and
  *     set incremented value to *ret_v, and return 0
  *   if key if not found, then return -1. *ret_v is not changed.
  *
  * item_inc_init():
- *   if key is found, then increment value field and
+ *   if key is found, then increment value field by 'off' and
  *     set incremented value to *ret_v, and return 0
- *   if key if not found, add key with (value_t)off
+ *   if key if not found, add key with 'off' as initial value.
  *     *ret_v is not changed.
- *        return 0 on successfully key adding,
- *        return -2, cannot alloc memories
+ *   return 0, on successfully key adding,
+ *   return -2, allocation fails
+ *   return -6, ht is string hash
  */
 int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
 int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
@@ -201,19 +220,26 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
 /* iterators */
 
 /*
- * create iterator attached to ht
+ * create an iterator attached to ht1
  *   after first al_hash_iter() call, the iterator points entries
  *    (when hash table is not empty)
- *  sort AL_SORT_NO :         item appears arbitary order.
+ *  flag AL_SORT_NO:          item appears arbitary order.
  *       AL_SORT_DIC:         item appears dictionary order of key
  *       AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
  *       logior AL_SORT_NUMERIC: sort key string numeric
  *       logior AL_SORT_VALUE: sort by value part insted of key,
- *                                 AL_SORT_NUMERIC is ignored, if logior_ed.
- *        else: return -7
+ *                                 AL_SORT_NUMERIC is ignored, if it is logior_ed.
+ *       logior AL_ITER_AE:   invoke al_hash_iter_end() automatically at end of iteration,
+ *                            do not call al_hash_iter_end() again.
+ *       else: return -7
+ * return -2, allocation fails
  * return -99, internal error
+ *
+ * al_hash_auto_end_iter_init() create an iterator which will be automatic end
+ * at end of iteration.  It is not necessary to call al_hash_iter_end() on
+ * normal end. 
  */
-int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort);
+int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag);
 
 /*
  * destroy iterator
@@ -233,14 +259,12 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp);
  * advance iterator
  * return -1, reached end
  * return -4, hash table is destroyed
- *
  * do not modify the string pointed by `key'
  */
 int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
 
 /*
  * replace value field pointed by iterator
- *   call al_hash_iter() in advance
  * return -1, not pointed (just created or pointed item is deleted)
  * return -4, hash table is destroyed
  * return -6, hash table type is not 'scalar'
@@ -249,7 +273,6 @@ int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
 
 /*
  * delete key/value item pointed by iterator
- *   call al_hash_iter() in advance
  * return -1, not pointed (just created or pointed item is deleted)
  * return -4, hash table is destroyed
  * return -6, hash table type is not 'scalar'
@@ -260,16 +283,18 @@ int item_delete_iter(struct al_hash_iter_t *iterp);
 /*** iterators for linked hash */
 
 /*
- * advance iterator pointed to linked_hash
- *  sort_value AL_SORT_NO :         item appears arbitary order.
- *             AL_SORT_DIC:         item appears dictionary order of key
- *             AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
- *             logior AL_SORT_NUMERIC: sort string numeric
+ * advance iterator pointed to linked_hash and create an another iterator for access values
+ *  flag AL_SORT_NO:          item appears arbitary order.
+ *       AL_SORT_DIC:         item appears dictionary order of key.
+ *       AL_SORT_COUNTER_DIC: item appears counter dictionary order of key.
+ *       logior AL_SORT_NUMERIC: sort string numeric.
+ *       logior AL_ITER_AE:   invoke al_linked_value_iter_end() automatically
+ *                                  at end of iteration.
  *          else: return -7
- *  al_link_value_cmp() is applied to compare the value.
+ *  return -2 allocation fails
  */
 int al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-			struct al_linked_value_iter_t **v_iterp, int sort_value);
+			struct al_linked_value_iter_t **v_iterp, int flag);
 
 /*
  * destroy iterator
@@ -296,15 +321,14 @@ int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
 
 /*** iterators for priority queue hash */
 /*
- * advance iterator pointed to pq_hash
- *  sort_value 0: item appears arbitary order.
- *             1: item appears dictionary order of key
- *             2: item appears counter dictionary order of key
- *          else: return -7
- *  al_link_value_cmp() is applied to compare the value.
+ * advance iterator pointed to pq_hash and create an another iterator for access values
+ *  flag AL_FLAG_NONE: no flag
+ *       AL_ITER_AE:   invoke al_qpueue_value_iter_end() automatically.
+ *       else: return -7
+ *  return -2 allocation fails
  */
 int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-			struct al_pqueue_value_iter_t **v_iterp);
+			struct al_pqueue_value_iter_t **v_iterp, int flag);
 
 /*
  * destroy iterator
@@ -386,23 +410,43 @@ typedef link_value_t pq_key_t;
 struct al_skiplist_t;
 struct al_skiplist_iter_t;
 
+/*
+ *  return -2, allocation fails
+ */
 int al_create_skiplist(struct al_skiplist_t **slp, int sort_order);
+
 int al_free_skiplist(struct al_skiplist_t *sl);
 int sl_empty_p(struct al_skiplist_t *sl);
 unsigned long sl_n_entries(struct al_skiplist_t *sl);
 int sl_skiplist_stat(struct al_skiplist_t *sl);
+int sl_set_skiplist_err_msg(struct al_skiplist_t *sl, const char *msg);
 
+/*
+ *  return -2, allocation fails
+ */
 int sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v);
 int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n);
+
 int sl_delete(struct al_skiplist_t *sl, pq_key_t key);
 int sl_delete_last_node(struct al_skiplist_t *sl);
 int sl_key(struct al_skiplist_t *sl, pq_key_t key);
 int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
 
+/*
+ *  return -2, allocation fails
+ */
 int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v);
 int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n);
 
-int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp);
+/*
+ *  create an iterator attached to sl
+ *  flag AL_FLAG_NONE: no flag
+ *       AL_ITER_AE:   invoke al_sl_iter_end() automatically.
+ *       else: return -7
+ *  return -2, allocation fails
+ */
+int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp, int flag);
+
 int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
 int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v);
 int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
@@ -410,6 +454,12 @@ int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 /*
  *   utility
  */
+
+#define _AL_S_(NAME)#NAME
+#define _AL_FLSD(x, y) x _AL_S_(y)
+#define _AL_FLS _AL_FLSD(__FILE__, [line __LINE__])
+#define al_set_hash_err_msg(ht, msg) al_set_hash_err_msg_impl((ht), msg _AL_FLS)
+int al_set_hash_err_msg_impl(struct al_hash_t *ht, const char *msg); // msg must be string constant
 
 char *
 al_gettok(char *cp, char **savecp, char del);
@@ -419,30 +469,33 @@ al_gettok(char *cp, char **savecp, char del);
  *  char buf[100]; int n;
  *  al_set_s(buf, cp, '\t');
  *  al_set_i(n, cp, '\t');
- *
  */
 
-#define al_set_i(to, cp, del) do{if (cp) (to)=atoi(al_gettok((cp),&(cp),del));} while(0)
-#define al_set_l(to, cp, del) do{if (cp) (to)=atol(al_gettok((cp),&(cp),del));} while(0)
-#define al_set_s(to, cp, del) do{if (cp) strncpy((to),al_gettok((cp),&(cp),del),sizeof(to)-1);} while(0)
-#define al_set_sp(to, cp, del) do{if (cp) (to)=al_gettok((cp),&(cp),del);} while(0)
+#define al_set_i(to, cp, del) do{if (cp) (to)=atoi(al_gettok((cp),&(cp),(del)));}while(0)
+#define al_set_l(to, cp, del) do{if (cp) (to)=atol(al_gettok((cp),&(cp),(del)));}while(0)
+#define al_set_s(to, cp, del) do{if (cp) strncpy((to),al_gettok((cp),&(cp),(del)),sizeof(to)-1);}while(0)
+#define al_set_sp(to, cp, del) do{if (cp) (to)=al_gettok((cp),&(cp),(del));}while(0)
 
 /*
  *  char *elms[5], tmp[100];
  *  al_split(elms, tmp, "abc\tdef\t\tghi", "\t");
  *  elms== "abc", "def", "", "ghi", NULL
  *
- */
+ *  al_split_n(elms, tmp, "abc\tdef\t\tghi", "\t", 3);
+ *  elms== "abc", "def", "\t\tghi", NULL
+  */
 int al_split_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del);
 int al_split_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del, int n);
 #define al_split(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_n(elms, tmp, str, del, n) al_split_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
-/* not return nul */
+/* not return nul string */
 /*
  *  char *elms[5], tmp[100];
  *  al_split_nn(elms, tmp, "abc\tdef\t\tghi", "\t");
- *  elms== "abc", "def", "ghi", NULL, NULL
+ *  elms== "abc", "def", "ghi", NULL
+ *  al_split_nn_n(elms, tmp, "abc\tdef\t\tghi", "\t", 2);
+ *  elms== "abc", "def\tghi", NULL
  */
 
 int al_split_nn_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del);

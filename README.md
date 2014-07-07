@@ -18,10 +18,16 @@ API are as follows. (from hash.h, not updated)
     int item_add_value(struct al_hash_t *ht, char *key, link_value_t v) // add to link/pqueue
     int item_key(struct al_hash_t *ht, char *key)
     int item_get(struct al_hash_t *ht, char *key, value_t *ret_v)
+    int item_get_str(struct al_hash_t *ht, char *key, link_value_t *v)
     int item_replace(struct al_hash_t *ht, char *key, value_t v)
     int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
+    int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v)
     int item_delete(struct al_hash_t *ht, char *key)
     int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
+    int al_linked_hash_get(struct al_hash_t *ht, char *key,
+		           struct al_linked_value_iter_t **v_iterp, int flag)
+    int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
+		           struct al_pqueue_value_iter_t **v_iterp, int flag)
     int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key)
@@ -39,7 +45,7 @@ API are as follows. (from hash.h, not updated)
     int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp)
 
     int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-                            struct al_pqueue_value_iter_t **v_iterp)
+                            struct al_pqueue_value_iter_t **v_iterp, int flag)
     int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp)
     int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
                              link_value_t *keyp, value_t *ret_count)

@@ -13,13 +13,14 @@ main() {
   int ret;
   char line[512];
 
-  ret = al_init_hash(0, &ht_count);
+  ret = al_init_hash(AL_DEFAULT_HASH_BIT, &ht_count);
   if (ret) {
     fprintf(stderr, "init ht_count %d\n", ret);
     exit(1);
   }
+  al_set_hash_err_msg(ht_count, "ht_count:");
 
-  while (fgets(line, sizeof(line) - 1, stdin)) {
+  while (fgets(line, sizeof(line), stdin)) {
     int len = strlen(line);
     if (0 < len)
       line[len - 1] = '\0';
@@ -44,18 +45,19 @@ main() {
     const char *ikey;
     value_t v;
 
-    ret = al_hash_iter_init(ht_count, &itr, AL_SORT_DIC|AL_SORT_VALUE);
+    ret = al_hash_iter_init(ht_count, &itr, AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE);
     if (ret)
       fprintf(stderr, "itr init %d\n", ret);
 
-    while (!(ret = al_hash_iter(itr, &ikey, &v)))
+    while (!(ret = al_hash_iter(itr, &ikey, &v))) {
+      if (v < 2) { // exit loop before end of iteration, invoke _end() later.
+	break;
+      }
       printf("%ld\t%s\n", v, ikey);
-    if (ret < -1)  /* -1: end of iteration, not abend */
-      fprintf(stderr, "itr exit %d\n", ret);
-
-    ret = al_hash_iter_end(itr);
-    if (ret)
-      fprintf(stderr, "itr end %d\n", ret);
+    }
+    if (ret == 0) { // invoke _end() manually
+      al_hash_iter_end(itr);
+    }
   }
 
   ret = al_free_hash(ht_count);
