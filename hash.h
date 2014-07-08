@@ -31,6 +31,7 @@ typedef const char * link_value_t;
 #define HASH_TYPE_STRING	0x200
 #define HASH_TYPE_LINKED	0x400
 #define HASH_TYPE_PQ		0x800
+#define HASH_TYPE_POINTER	0x1000
 
 #ifdef AL_HASH_O
 void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
@@ -199,6 +200,7 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
 int item_get_str(struct al_hash_t *ht, char *key, link_value_t *v);
+int item_get_pointer(struct al_hash_t *ht, char *key, void **v);
 int item_replace(struct al_hash_t *ht, char *key, value_t v);
 int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
 int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v);
@@ -274,7 +276,7 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp);
  * do not modify the string pointed by `key'
  */
 int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
-
+int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v);
 /*
  * replace value field pointed by iterator
  * return -1, not pointed (just created or pointed item is deleted)

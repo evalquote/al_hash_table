@@ -24,6 +24,8 @@
 #define AL_WARN 1
 #endif
 
+#undef NUMSCAN
+
 /* type of linked value */
 typedef struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
 
@@ -41,6 +43,7 @@ struct item {
     link_value_t cstr;
     link_t       *link;
     struct al_skiplist_t *skiplist;
+    void         *ptr;
   } u;
 };
 
@@ -54,6 +57,7 @@ struct item {
 #define HASH_FLAG_STRING	HASH_TYPE_STRING
 #define HASH_FLAG_LINKED	HASH_TYPE_LINKED
 #define HASH_FLAG_PQ		HASH_TYPE_PQ
+#define HASH_FLAG_POINTER	HASH_TYPE_POINTER
 #define HASH_TYPE_MASK		(HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_LINKED|HASH_FLAG_PQ)
 #define HASH_FLAG_PQ_PSET	(HASH_TYPE_PQ<<1)
 
@@ -344,18 +348,8 @@ al_init_hash(int type, int bit, struct al_hash_t **htp)
   return ret;
 }
 
-#if 0
 int
-al_init_linked_hash(int bit, struct al_hash_t **htp)
-{
-  int ret = init_hash(bit, htp);
-  if (!ret)
-    (*htp)->h_flag = HASH_FLAG_LINKED;
-  return ret;
-}
-#endif
-
-int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n)
+al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n)
 {
   if (!ht) return -3;
   if (!(ht->h_flag & HASH_FLAG_PQ)) return -6;
@@ -370,23 +364,6 @@ int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long 
  
   return 0;
 }
-
-#if 0
-int
-al_init_pqueue_hash(int bit, struct al_hash_t **htp, int sort_order, unsigned long max_n)
-{
-  int so = sort_order & HASH_FLAG_SORT_ORD;
-  if (so != AL_SORT_DIC && so != AL_SORT_COUNTER_DIC) return -7;
-  int ret = init_hash(bit, htp);
-  if (!ret) {
-    (*htp)->h_flag = HASH_FLAG_PQ | so;
-    if (sort_order & AL_SORT_NUMERIC)
-      (*htp)->h_flag |= HASH_FLAG_SORT_NUMERIC;
-    (*htp)->pq_max_n = max_n;
-  }
-  return ret;
-}
-#endif
 
 static void
 free_linked_value(link_t *lp)
@@ -413,6 +390,8 @@ free_hash(struct al_hash_t *ht, struct item **itp, unsigned int start, unsigned 
 	al_free_skiplist(it->u.skiplist);
       else if (ht->h_flag & HASH_FLAG_STRING)
 	al_free_linked_value(it->u.cstr);
+      else if (ht->h_flag & HASH_FLAG_POINTER)
+	free(it->u.ptr);
       free((void *)it->key);
       free((void *)it);
       it = next;
@@ -506,40 +485,34 @@ itn_cmp(const void *a, const void *b)
 static int
 str_num_cmp(const char *a, const char *b)
 {
+#ifdef NUMSCAN
   double da, db;
   int na = 0, nb = 0;
   na = sscanf(a, "%lf", &da);
   nb = sscanf(b, "%lf", &db);
   if (na == 0 || nb == 0)
     return strcmp(a, b);
-  return da <= db ? -1 : 1;
+  else
+    return da <= db ? -1 : 1;
+#else
+  if (a[0] == '-' && b[0] == '-')
+    return -strcmp(a, b);
+  else
+    return strcmp(a, b);
+#endif
 }
-
 
 static int
 it_num_cmp(const void *a, const void *b)
 {
   return str_num_cmp((*(struct item **)a)->key, (*(struct item **)b)->key);
-#if 0
-  if ((*(struct item **)a)->key[0] == '-' &&
-      (*(struct item **)b)->key[0] == '-')
-    return -strcmp((*(struct item **)a)->key, (*(struct item **)b)->key);
-  return strcmp((*(struct item **)a)->key, (*(struct item **)b)->key);
-#endif
 }
 
 static int
 itn_num_cmp(const void *a, const void *b)
 {
   return -str_num_cmp((*(struct item **)a)->key, (*(struct item **)b)->key);
-#if 0
-  if ((*(struct item **)a)->key[0] == '-' &&
-      (*(struct item **)b)->key[0] == '-')
-    return strcmp((*(struct item **)a)->key, (*(struct item **)b)->key);
-  return -strcmp((*(struct item **)a)->key, (*(struct item **)b)->key);
-#endif
 }
-
 
 static int
 it_num_value_cmp(const void *a, const void *b)
@@ -569,24 +542,12 @@ static int
 it_value_strnum_cmp(const void *a, const void *b)
 {
   return str_num_cmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
-#if 0
-  if ((*(struct item **)a)->u.cstr[0] == '-' &&
-      (*(struct item **)b)->u.cstr[0] == '-')
-    return -strcmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
-  return strcmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
-#endif
 }
 
 static int
 itn_value_strnum_cmp(const void *a, const void *b)
 {
   return -str_num_cmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
-#if 0
-  if ((*(struct item **)a)->u.cstr[0] == '-' &&
-      (*(struct item **)b)->u.cstr[0] == '-')
-    return strcmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
-  return -strcmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
-#endif
 }
 
 int
@@ -706,6 +667,9 @@ free_to_be_free(struct al_hash_iter_t *iterp)
       al_free_skiplist(iterp->to_be_free->u.skiplist);
     else if (iterp->hi_flag & HASH_FLAG_STRING)
       al_free_linked_value(iterp->to_be_free->u.cstr);
+    else if (iterp->hi_flag & HASH_FLAG_POINTER)
+      free(iterp->to_be_free->u.ptr);
+
     free((void *)iterp->to_be_free);
     iterp->to_be_free = NULL;
   }
@@ -784,6 +748,24 @@ al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
   if (!ret) {
     *key = it->key;
     if (ret_v) *ret_v = it->u.value;
+  } else {
+    check_hash_iter_ae(iterp, ret);
+  }
+  return ret;
+}
+
+int
+al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v)
+{
+  int ret = 0;
+  struct item *it;
+  if (!iterp || !key) return -3;
+
+  *key = NULL;
+  ret = advance_iter(iterp, &it);
+  if (!ret) {
+    *key = it->key;
+    if (ret_v) *ret_v = it->u.cstr;
   } else {
     check_hash_iter_ae(iterp, ret);
   }
@@ -953,7 +935,7 @@ mk_linked_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 
   if (so == AL_SORT_NO || !it->u.link->link) { // no sort, or one value entry only
     vip->link = vip->current = it->u.link;
-    vip->li_max_index = 1;
+    vip->li_max_index = so ? 1 : 0;
   } else {
     unsigned int nvalue = vip->li_max_index;
     link_t *lp;
@@ -1321,6 +1303,22 @@ item_get_str(struct al_hash_t *ht, char *key, link_value_t *v)
 }
 
 int
+item_get_pointer(struct al_hash_t *ht, char *key, void **v)
+{
+  if (!ht || !key) return -3;
+  if (!(ht->h_flag & HASH_FLAG_POINTER)) return -6;
+  unsigned int hv = al_hash_fn_i(key);
+  struct item *it = hash_find(ht, key, hv);
+
+  if (it) {
+    if (v)
+      *v = it->u.ptr;
+    return 0;
+  }
+  return -1;
+}
+
+int
 item_set(struct al_hash_t *ht, char *key, value_t v)
 {
   if (!ht || !key) return -3;
@@ -1361,15 +1359,37 @@ item_set_str(struct al_hash_t *ht, char *key, link_value_t v)
   ht->h_flag &= ~HASH_FLAG_SCALAR;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
+  char *dp = strdup(v);
+  if (!dp) return -2;
 
   if (it) {
     al_free_linked_value(it->u.cstr);
-    it->u.cstr = strdup(v);
+    it->u.cstr = dp;
     return 0;
   }
-  return hash_v_insert(ht, hv, key, (intptr_t)v);
+  return hash_v_insert(ht, hv, key, (intptr_t)dp);
 }
 
+int
+item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size)
+{
+  if (!ht || !key) return -3;
+  if (!(ht->h_flag & HASH_FLAG_POINTER)) return -6;
+  ht->h_flag &= ~HASH_FLAG_SCALAR;
+  unsigned int hv = al_hash_fn_i(key);
+  struct item *it = hash_find(ht, key, hv);
+
+  void *ptr = malloc(size);
+  if (!ptr) return -2;
+  memcpy(ptr, v, size);
+
+  if (it) {
+    free(it->u.ptr);
+    it->u.ptr = ptr;
+    return 0;
+  }
+  return hash_v_insert(ht, hv, key, (intptr_t)ptr);
+}
 
 int
 item_replace(struct al_hash_t *ht, char *key, value_t v)
@@ -1408,9 +1428,11 @@ item_replace_str(struct al_hash_t *ht, char *key, link_value_t v)
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
+  char *dp = strdup(v);
+  if (!dp) return -2;
   if (it) {
     al_free_linked_value(it->u.cstr);
-    it->u.cstr = strdup(v);
+    it->u.cstr = dp;
     return 0;
   }
   return -1;
@@ -1706,11 +1728,6 @@ pq_k_cmp(struct al_skiplist_t *sl, pq_key_t a, pq_key_t b)
       return str_num_cmp(a, b);
     else
       return -str_num_cmp(a, b);
-#if 0    
-    int m = (sl->sort_order & HASH_FLAG_PQ_SORT_DIC) ? 1 : -1;
-    if (*a == '-' && *b == '-') m = -m;
-    return m * strcmp(a, b);
-#endif
   }
   if (sl->sort_order & HASH_FLAG_PQ_SORT_DIC)
     return strcmp(a, b);
