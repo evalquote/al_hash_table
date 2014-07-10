@@ -2,14 +2,20 @@
 /*
  *  Use and distribution licensed under the BSD license.  See
  *  the LICENSE file for full text.
+ * 
+ * latest version see, https://github.com/evalquote/al_hash_table
  */
 
-/* NOT thread safe */
+                 /* NOT thread safe */
 
 #ifndef ALH_H
 #define ALH_H
 #include <inttypes.h>
 
+/* swicth */
+#undef NUMSCAN
+#undef ITEM_PV	/* define ITEM_PV enables item_xxx_pv() functions */
+		   
 /* type of hash entry scalar value */
 typedef long value_t;
 
@@ -32,6 +38,7 @@ typedef const char * link_value_t;
 #define HASH_TYPE_LINKED	0x400
 #define HASH_TYPE_PQ		0x800
 #define HASH_TYPE_POINTER	0x1000
+#define HASH_TYPE_LCDR		0x2000
 
 #ifdef AL_HASH_O
 void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
@@ -60,12 +67,14 @@ struct al_hash_iter_t;
 /* type of iterator pointed to linked hash table */
 struct al_linked_value_iter_t;
 
+/* type of iterator pointed to lcdr hash table */
+struct al_lcdr_value_iter_t;
+
 /* type of iterator pointed to priority queue hash table */
 struct al_pqueue_value_iter_t;
 
 /*
   statistics
-
   al_hash_bit:      bit size of main hash table
                     hash table size is  (1 << al_hash_bit)
   al_n_entries:     number of entries of main hash table
@@ -103,24 +112,34 @@ typedef unsigned long al_chain_length_t[11];
 /*
  * create hash table
  *
- * type: one of following type
+ * type: one of following value type
  *       HASH_TYPE_SCALAR
  *       HASH_TYPE_STRING
  *       HASH_TYPE_LINKED
  *       HASH_TYPE_PQ
+ *       HASH_TYPE_POINTER
+ *       HASH_TYPE_LCDR
  * 
  * bit == 0, use AL_DEFAULT_HASH_BIT
  *
- *  al_set_pqueue_parameter
+ * al_set_pqueue_parameter
  *  sort_order: AL_SORT_DIC:         item appears dictionary order of key
  *              AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
  *              logior AL_SORT_NUMERIC: sort string numeric
  *  max_n:      0, unlimited
  *
- * return -2 allocation fails
+ * al_set_pointer_hash_parameter
+ *  dup_p   value duplication function   default: retp = malloc(size); memcpy(retp, ptr, size);
+ *  free_p  value pointer free function  default: free(ptr);
+ *
+ *
+ * return -2 allocation fails 
  */
 int al_init_hash(int type, int bit, struct al_hash_t **htp);
 int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
+int al_set_pointer_hash_parameter(struct al_hash_t *ht,
+				  int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
+				  int (*free_p)(void *ptr));
 
 /*
  * destroy hash table
@@ -140,43 +159,45 @@ int al_free_hash(struct al_hash_t *ht);
 int al_hash_stat(struct al_hash_t *ht,
 		 struct al_hash_stat_t *statp,
 		 al_chain_length_t acl);
-
 int al_out_hash_stat(struct al_hash_t *ht, const char *title);
 
 /*
- *  set error message, print out it on error and AL_ITER_AE set.
+ * set error message, print out it on error and AL_ITER_AE set.
  */
 int al_set_hash_err_msg_impl(struct al_hash_t *ht, const char *msg);
 
 /*
- * return number of attached iterators of ht  (0 <= number)
+ * return number of attached iterators of ht  (0 <= number, else error)
  */
 int al_hash_n_iterators(struct al_hash_t *ht);
 
 /*
  * predicate
- * return  0: yes
- * return -1: no
+ * return  0: yes,  return -1: no
  */
 int al_is_linked_hash(struct al_hash_t *ht);
 int al_is_linked_iter(struct al_hash_iter_t *iterp);
 int al_is_pqueue_hash(struct al_hash_t *ht);
 int al_is_pqueue_iter(struct al_hash_iter_t *iterp);
+int al_is_lcdr_hash(struct al_hash_t *ht);
+int al_is_lcdr_iter(struct al_hash_iter_t *iterp);
 
 /*
  * set key and value to hash table
  *
- * if key is not in hash table, add it
- * else replace value field by v
- * if pv is not NULL, return previous value
+ * if key is not in hash table, add it, else replace value field by v
+ * if ret_pv is not NULL, return previous value (when define ITEM_PV)
+ * item_set_pointer2() if ret_v is not NULL, return duplicated pointer (that ht points) of v
  * return -2, allocation fails
  */
 int item_set(struct al_hash_t *ht, char *key, value_t v);
-int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv);
+int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
 int item_set_str(struct al_hash_t *ht, char *key, link_value_t v);
+int item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size);
+int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v);
 
 /*
- * add value to linked hashtable or pqueue hashtable
+ * add value to linked, lcdr or pqueue hashtable
  * return -2, allocation fails
  * return -6, hash table type is not 'linked'
  */
@@ -191,6 +212,7 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
  *            item_set_str/item_get_str/item_replace_str on scalar hash
  *
  * if pointer for return value (ret_v, ret_pv) is NULL, ignore it
+ * if ret_pv is not NULL, return previous value (when define ITEM_PV)
  *
  * delete:
  *   either of scalar hash table and linked hash is acceptable as parameter
@@ -199,8 +221,8 @@ int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
  */
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
-int item_get_str(struct al_hash_t *ht, char *key, link_value_t *v);
-int item_get_pointer(struct al_hash_t *ht, char *key, void **v);
+int item_get_str(struct al_hash_t *ht, char *key, link_value_t *ret_v);
+int item_get_pointer(struct al_hash_t *ht, char *key, void **ret_v);
 int item_replace(struct al_hash_t *ht, char *key, value_t v);
 int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
 int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v);
@@ -277,6 +299,7 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp);
  */
 int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
 int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v);
+int al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **ret_v);
 /*
  * replace value field pointed by iterator
  * return -1, not pointed (just created or pointed item is deleted)
@@ -332,6 +355,34 @@ int al_linked_hash_nvalue(struct al_linked_value_iter_t *v_iterp);
  */
 int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
 
+/*** iterators for lcdr hash */
+
+int al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
+		      struct al_lcdr_value_iter_t **v_iterp, int flag);
+
+/*
+ * destroy iterator
+ */
+int al_lcdr_value_iter_end(struct al_lcdr_value_iter_t *v_iterp);
+
+/*
+ * advance value iterator
+ * return -1, reached end
+ */
+int al_lcdr_value_iter(struct al_lcdr_value_iter_t *v_iterp,
+			 link_value_t *ret_v);
+
+/*
+ * Return number of values belong to value iterator.
+ */
+int al_lcdr_hash_nvalue(struct al_lcdr_value_iter_t *v_iterp);
+
+/*
+ * Rewind value iteration.
+ */
+int al_lcdr_hash_rewind_value(struct al_lcdr_value_iter_t *v_iterp);
+
+
 
 /*** iterators for priority queue hash */
 /*
@@ -383,7 +434,7 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *
  * item_delete_iter():
  *   The `key' pointer returned from al_hash_iter() is valid until
- *   next al_hash_iter() call.
+ *   next al_hash_iter() call (unless hash table destroyed).
  *
  *   ex.
  *     const char *ikey;
@@ -516,5 +567,9 @@ int al_split_nn_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned
 int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del, int n);
 #define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_nn_n(elms, tmp, str, del, n) al_split_nn_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
+
+int al_strcjoin_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char delch, int n);
+#define al_strcjoin_n(elms, tmp_cp, del, n) al_str_join_n_impl((elms),sizeof(elms)/sizeof(char *),(tmp_cp),sizeof(tmp_cp),(del),(n))
+#define al_strcjoin(elms, tmp_cp, del, n) al_str_join_n_impl((elms),sizeof(elms)/sizeof(char *),(tmp_cp),sizeof(tmp_cp),(del),(n),sizeof(elms)/sizeof(char *))
 
 #endif
