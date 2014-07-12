@@ -2149,7 +2149,7 @@ static struct slnode *
 mk_node(int level, pq_key_t key)
 {
   struct slnode *np = (struct slnode *)calloc(1, sizeof(struct slnode) +
-					         level * sizeof(struct slnode *));
+					      (level - 1) * sizeof(struct slnode *));
   if (!np) return NULL;
 
   np->key = strdup(key);
