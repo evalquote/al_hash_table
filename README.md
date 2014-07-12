@@ -34,6 +34,8 @@ API are as follows. (from hash.h, not updated)
                            struct al_linked_value_iter_t **v_iterp, int flag)
     int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
                            struct al_pqueue_value_iter_t **v_iterp, int flag)
+    int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
+		         struct al_lcdr_value_iter_t **v_iterp, int flag)
     int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key)

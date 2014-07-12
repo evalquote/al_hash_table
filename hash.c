@@ -1,5 +1,5 @@
 /*
- * The hash function used here is FNV, 
+ * The hash function used here is FNV,
  *   <http://www.isthe.com/chongo/tech/comp/fnv/>
  */
 /*
@@ -31,12 +31,13 @@
 typedef struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
 
 /* type of lcdr value */
-#define LCDR_SIZE 64
+#define LCDR_SIZE_L 4
+#define LCDR_SIZE_U 64
 typedef struct lcdr_ {
   struct lcdr_ *link;
-  int va_used;  // av[0] .. av[ld_used-1] are filled
-  unsigned int va_size;
-  link_value_t va[LCDR_SIZE];
+  unsigned int va_used;          // va[0] .. av[va_used-1] are used
+  unsigned int va_size; // LCDR_SIZE_L .. LCDR_SIZE_U
+  link_value_t va[1];   // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
 } lcdr_t;
 
 /* hash entry, with unique key */
@@ -125,8 +126,8 @@ struct al_linked_value_iter_t {
   link_t *li_link, *li_current;
   link_value_t *li_sorted;
   struct al_hash_iter_t *li_pitr; // parent
-  unsigned int li_index;     // index of sorted[]
   unsigned int li_max_index;
+  unsigned int li_index;     // index of sorted[]
   int li_flag; // AL_ITER_AE bit only
 };
 
@@ -134,9 +135,9 @@ struct al_lcdr_value_iter_t {
   lcdr_t *cd_link, *cd_current;
   link_value_t *cd_sorted;
   struct al_hash_iter_t *cd_pitr; // parent
-  unsigned int cd_cindex;    // index of current->va[]
-  unsigned int cd_index;     // index of sorted[]
   unsigned int cd_max_index;
+  unsigned int cd_index;     // index of sorted[]
+  unsigned int cd_cindex;    // index of current->va[]
   int cd_flag; // AL_ITER_AE bit only
 };
 
@@ -382,7 +383,7 @@ al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_
   if (sort_order & AL_SORT_NUMERIC)
     ht->h_flag |= HASH_FLAG_SORT_NUMERIC;
   ht->pq_max_n = max_n;
- 
+
   return 0;
 }
 
@@ -417,10 +418,10 @@ free_linked_value(link_t *lp)
 static void
 free_lcdr_value(lcdr_t *dp)
 {
-  int i;
+  unsigned int i;
   while (dp) {
     lcdr_t *nextp = dp->link;
-    for (i = 0; i < dp->va_used; i++) 
+    for (i = 0; i < dp->va_used; i++)
       al_free_linked_value(dp->va[i]);
     free((void *) dp);
     dp = nextp;
@@ -430,19 +431,25 @@ free_lcdr_value(lcdr_t *dp)
 static void
 free_value(struct al_hash_t *ht, struct item *it)
 {
-  if (ht->h_flag & HASH_FLAG_STRING) {
+  switch (ht->h_flag & HASH_TYPE_MASK) {
+  case HASH_FLAG_STRING:
     al_free_linked_value(it->u.cstr);
-  } else if (ht->h_flag & HASH_FLAG_POINTER)  {
+    break;
+  case HASH_FLAG_POINTER:
     if (ht->free_p)
       ht->free_p(it->u.ptr);
     else
       free(it->u.ptr);
-  } else if (ht->h_flag & HASH_FLAG_LINKED) {
-    free_linked_value(it->u.link);
-  } else if (ht->h_flag & HASH_FLAG_PQ) {
+    break;
+  case HASH_FLAG_PQ:
     al_free_skiplist(it->u.skiplist);
-  } else if (ht->h_flag & HASH_FLAG_LCDR) {
+    break;
+  case HASH_FLAG_LINKED:
+    free_linked_value(it->u.link);
+    break;
+  case HASH_FLAG_LCDR:
     free_lcdr_value(it->u.lcdr);
+    break;
   }
 }
 
@@ -667,7 +674,7 @@ al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag)
       return -99;
     }
     if (flag & AL_SORT_VALUE) { // sort by value part
-      
+
       if ((ht->h_flag & HASH_FLAG_STRING) == 0) { // scalar
 	if (so == AL_SORT_DIC)
 	  qsort((void *)it_array, sidx, sizeof(struct item *), it_num_value_cmp);
@@ -1217,7 +1224,7 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     lcdr_t *dp;
     if (nvalue == 0) { // al_lcd_hash_nvalue() set vip->cd_max_index as correct value
       for (dp = it->u.lcdr; dp; dp = dp->link)
-	nvalue += dp->va_used;      
+	nvalue += dp->va_used;
     }
     link_value_t *sarray = (link_value_t *)malloc(nvalue * sizeof(link_value_t *));
     if (!sarray) {
@@ -1227,8 +1234,8 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     vip->cd_max_index = nvalue;
 
     for (nvalue = 0, dp = it->u.lcdr; dp; dp = dp->link) {
-      int i;
-      for (i = 0; i < dp->va_used; i++) 
+      unsigned int i;
+      for (i = 0; i < dp->va_used; i++)
 	sarray[nvalue++] = dp->va[i];
     }
 
@@ -1263,7 +1270,7 @@ int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
 
   ip->hi_flag = ITER_FLAG_VIRTUAL;
   ip->ht = ht;
-  
+
   ret = mk_lcdr_hash_iter(it, ip, v_iterp, flag);
   if (ret) {
     free((void *)ip);
@@ -1851,15 +1858,18 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   lcdr_t *ndp = NULL;
-  
+
   ret = -2;
   if (it) {
     lcdr_t *dp = it->u.lcdr;
     if (dp->va_size <= dp->va_used) {
-      ndp = (lcdr_t *)calloc(1, sizeof(lcdr_t));
+      int sz = dp->va_size;
+      if (sz < LCDR_SIZE_U)
+	sz <<= 1;
+      ndp = (lcdr_t *)calloc(1, sizeof(lcdr_t) + (sz - 1) * sizeof(link_value_t));
       if (!ndp) goto free_lv;
 
-      ndp->va_size = LCDR_SIZE;
+      ndp->va_size = sz;
       ndp->link = dp;
       it->u.lcdr = ndp;
       dp = ndp;
@@ -1867,7 +1877,7 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
     dp->va[dp->va_used++] = lv;
     return 0;
   }
-  ndp = (lcdr_t *)calloc(1, sizeof(lcdr_t));
+  ndp = (lcdr_t *)calloc(1, sizeof(lcdr_t) + (LCDR_SIZE_L - 1) * sizeof(link_value_t));
   if (!ndp) goto free_lv;
 
   it = (struct item *)malloc(sizeof(struct item));
@@ -1876,7 +1886,7 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
   it->key = strdup(key);
   if (!it->key) goto free_it;
 
-  ndp->va_size = LCDR_SIZE;
+  ndp->va_size = LCDR_SIZE_L;
   ndp->va[ndp->va_used++] = lv;
   it->u.lcdr = ndp;
 

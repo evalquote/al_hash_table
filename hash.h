@@ -113,12 +113,14 @@ typedef unsigned long al_chain_length_t[11];
  * create hash table
  *
  * type: one of following value type
- *       HASH_TYPE_SCALAR
- *       HASH_TYPE_STRING
+ *    only one value for a key
+ *       HASH_TYPE_SCALAR    long
+ *       HASH_TYPE_STRING    char *
+ *       HASH_TYPE_POINTER   void *
+ *    multiple (char *) values for a key
  *       HASH_TYPE_LINKED
- *       HASH_TYPE_PQ
- *       HASH_TYPE_POINTER
- *       HASH_TYPE_LCDR
+ *       HASH_TYPE_LCDR    // alternative of TYPE_LINKED, list is represented by cdr coding.
+ *       HASH_TYPE_PQ      // priority queue
  * 
  * bit == 0, use AL_DEFAULT_HASH_BIT
  *
