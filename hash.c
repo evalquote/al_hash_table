@@ -35,7 +35,7 @@ typedef struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
 #define LCDR_SIZE_U 64
 typedef struct lcdr_ {
   struct lcdr_ *link;
-  unsigned int va_used;          // va[0] .. av[va_used-1] are used
+  unsigned int va_used; // va[0] .. va[va_used-1] are used
   unsigned int va_size; // LCDR_SIZE_L .. LCDR_SIZE_U
   link_value_t va[1];   // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
 } lcdr_t;
@@ -253,9 +253,8 @@ hash_find(struct al_hash_t *ht, char *key, unsigned int hv)
     it = ht->hash_table[hv & ht->hash_mask];
 
   while (it) {
-    if (strcmp(key, it->key) == 0) { // found
+    if (strcmp(key, it->key) == 0) // found
       return it;
-    }
     it = it->chain;
   }
   return NULL;
@@ -2050,22 +2049,22 @@ al_set_hash_err_msg_impl(struct al_hash_t *ht, const char *msg)
 #undef SL_FIRST_KEY
 #define SL_LAST_KEY
 
-struct slnode_t {
+struct slnode {
   pq_key_t key;
   union {
     pq_value_t value;
   } u;
-  struct slnode_t *forward[1]; /* variable sized array of forward pointers */
+  struct slnode *forward[1]; /* variable sized array of forward pointers */
 };
 
 struct al_skiplist_t {
-  struct slnode_t *head;
+  struct slnode *head;
 #ifdef SL_FIRST_KEY
   pq_key_t first_key;
 #endif
 #ifdef SL_LAST_KEY
   // pq_key_t last_key;
-  struct slnode_t *last_node;
+  struct slnode *last_node;
 #endif
   unsigned long n_entries;
   int level;
@@ -2075,7 +2074,7 @@ struct al_skiplist_t {
 
 struct al_skiplist_iter_t {
   struct al_skiplist_t *sl_p;
-  struct slnode_t *current_node;
+  struct slnode *current_node;
   int sl_flag;  // ITER_FLAG_AE bit only
 };
 
@@ -2097,7 +2096,7 @@ pq_k_cmp(struct al_skiplist_t *sl, pq_key_t a, pq_key_t b)
 int
 sl_skiplist_stat(struct al_skiplist_t *sl)
 {
-  struct slnode_t *np;
+  struct slnode *np;
   int i;
 
   if (!sl) return -3;
@@ -2125,13 +2124,11 @@ sl_set_skiplist_err_msg(struct al_skiplist_t *sl, const char *msg)
   return 0;
 }
 
-
-
-static struct slnode_t *
-find_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[])
+static struct slnode *
+find_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode *update[])
 {
   int i;
-  struct slnode_t *np = sl->head;
+  struct slnode *np = sl->head;
   for (i = sl->level - 1; 0 <= i; --i) {
     while (np->forward[i]) {
       int c = pq_k_cmp(sl, np->forward[i]->key, key);
@@ -2148,10 +2145,11 @@ find_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[])
   return NULL;
 }
 
-static struct slnode_t *
+static struct slnode *
 mk_node(int level, pq_key_t key)
 {
-  struct slnode_t *np = (struct slnode_t *)calloc(1, sizeof(struct slnode_t) + level * sizeof(struct slnode_t *));
+  struct slnode *np = (struct slnode *)calloc(1, sizeof(struct slnode) +
+					         (level - 1) * sizeof(struct slnode *));
   if (!np) return NULL;
 
   np->key = strdup(key);
@@ -2198,7 +2196,7 @@ al_free_skiplist(struct al_skiplist_t *sl)
 {
   if (!sl) return -3;
 
-  struct slnode_t *np, *next;
+  struct slnode *np, *next;
   np = sl->head->forward[0];
 
   while (np) {
@@ -2214,7 +2212,7 @@ al_free_skiplist(struct al_skiplist_t *sl)
 }
 
 static void
-sl_delete_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *np, struct slnode_t **update)
+sl_delete_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode *np, struct slnode **update)
 {
   int i;
 #ifdef SL_FIRST_KEY
@@ -2251,7 +2249,7 @@ sl_delete_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *np, stru
 int
 sl_delete(struct al_skiplist_t *sl, pq_key_t key)
 {
-  struct slnode_t *update[SL_MAX_LEVEL], *np;
+  struct slnode *update[SL_MAX_LEVEL], *np;
   int i;
 
   if (!sl || !key) return -3;
@@ -2274,7 +2272,7 @@ sl_delete(struct al_skiplist_t *sl, pq_key_t key)
 int
 sl_delete_last_node(struct al_skiplist_t *sl)
 {
-  struct slnode_t *update[SL_MAX_LEVEL], *np, *lnode, *p;
+  struct slnode *update[SL_MAX_LEVEL], *np, *lnode, *p;
   int i;
 
   if (!sl) return -3;
@@ -2310,9 +2308,9 @@ get_level(pq_key_t key)
 }
 
 static int
-node_set(struct al_skiplist_t *sl, pq_key_t key, struct slnode_t *update[], struct slnode_t **ret_np)
+node_set(struct al_skiplist_t *sl, pq_key_t key, struct slnode *update[], struct slnode **ret_np)
 {
-  struct slnode_t *new_node;
+  struct slnode *new_node;
   int i, level;
 
   level = get_level(key);
@@ -2346,8 +2344,8 @@ int
 sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v)
 {
   int ret = 0;
-  struct slnode_t *update[SL_MAX_LEVEL];
-  struct slnode_t *np;
+  struct slnode *update[SL_MAX_LEVEL];
+  struct slnode *np;
 
   if (!sl || !key) return -3;
   if (!(np = find_node(sl, key, update))) {
@@ -2385,8 +2383,8 @@ sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v)
 {
   if (!sl || !key) return -3;
 
-  struct slnode_t *np;
-  struct slnode_t *update[SL_MAX_LEVEL];
+  struct slnode *np;
+  struct slnode *update[SL_MAX_LEVEL];
   if ((np = find_node(sl, key, update))) {
     if (ret_v)
       *ret_v = np->u.value;
@@ -2404,8 +2402,8 @@ sl_key(struct al_skiplist_t *sl, pq_key_t key)
 int
 sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
 {
-  struct slnode_t *update[SL_MAX_LEVEL];
-  struct slnode_t *np;
+  struct slnode *update[SL_MAX_LEVEL];
+  struct slnode *np;
   int ret = 0;
 
   if (!sl || !key) return -3;
