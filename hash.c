@@ -420,8 +420,8 @@ free_lcdr_value(lcdr_t *dp)
   unsigned int i;
   while (dp) {
     lcdr_t *nextp = dp->link;
-    for (i = 0; i < dp->va_used; i++)
-      al_free_linked_value(dp->va[i]);
+    for (i = dp->va_used; 0 < i;)
+      al_free_linked_value(dp->va[--i]);
     free((void *) dp);
     dp = nextp;
   }
@@ -2149,7 +2149,7 @@ static struct slnode *
 mk_node(int level, pq_key_t key)
 {
   struct slnode *np = (struct slnode *)calloc(1, sizeof(struct slnode) +
-					         (level - 1) * sizeof(struct slnode *));
+					         level * sizeof(struct slnode *));
   if (!np) return NULL;
 
   np->key = strdup(key);
