@@ -518,6 +518,13 @@ int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
 int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v);
 int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 
+/* find first key */
+
+void
+ffk(void *base, size_t nel,
+    int (*compar)(const void *, const void *),
+    size_t topn);
+
 /*
  *   utility
  */

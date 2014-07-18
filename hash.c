@@ -654,7 +654,6 @@ al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag)
       free((void *)ip);
       return -2;
     }
-
     if (ht->rehashing) {
       sidx = add_it_to_array_for_sorting(it_array, sidx, ht->hash_table_old,
 					 ht->rehashing_front, hash_size(ht->hash_bit - 1),
@@ -792,7 +791,7 @@ check_hash_iter_ae(struct al_hash_iter_t *iterp, int ret) {
       al_hash_iter_end(iterp);
     } else {
       const char *msg = "";
-      if (iterp->ht)
+      if (iterp->ht && iterp->ht->err_msg)
 	msg = iterp->ht->err_msg;
       fprintf(stderr, "hash_iter %s advance error (code=%d)\n", msg, ret);
     }
@@ -1097,16 +1096,18 @@ al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 		    struct al_linked_value_iter_t **v_iterp, int flag)
 {
   int ret = 0;
+  struct item *it;
   int so = flag & HASH_FLAG_SORT_ORD;
   if (!iterp || !key) return -3;
 
   *key = NULL;
-  if (!(iterp->hi_flag & HASH_FLAG_LINKED)) return -6;
-  if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so) return -7;
+  if (!(iterp->hi_flag & HASH_FLAG_LINKED))
+    ret = -6;
+  else if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so)
+    ret = -7;
+  else
+    ret = advance_iter(iterp, &it);
 
-  struct item *it;
-
-  ret = advance_iter(iterp, &it);
   if (ret) {
     check_hash_iter_ae(iterp, ret);
     return ret;
@@ -1285,16 +1286,18 @@ al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 		  struct al_lcdr_value_iter_t **v_iterp, int flag)
 {
   int ret = 0;
+  struct item *it;
   int so = flag & HASH_FLAG_SORT_ORD;
   if (!iterp || !key) return -3;
 
   *key = NULL;
-  if (!(iterp->hi_flag & HASH_FLAG_LCDR)) return -6;
-  if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so) return -7;
+  if (!(iterp->hi_flag & HASH_FLAG_LCDR))
+    ret = -6;
+  else if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so)
+    ret = -7;
+  else
+    ret = advance_iter(iterp, &it);
 
-  struct item *it;
-
-  ret = advance_iter(iterp, &it);
   if (ret) {
     check_hash_iter_ae(iterp, ret);
     return ret;
@@ -1457,14 +1460,17 @@ int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 			struct al_pqueue_value_iter_t **v_iterp, int flag)
 {
   int ret = 0;
+  struct item *it;
   if (!iterp || !key) return -3;
-  if ((flag & ~AL_ITER_AE) != 0) return -7;  // only AL_ITER_AE is a valid flag.
 
   *key = NULL;
-  if (!(iterp->hi_flag & HASH_FLAG_PQ)) return -6;
+  if (!(iterp->hi_flag & HASH_FLAG_PQ))
+    ret = -6;
+  else if ((flag & ~AL_ITER_AE) != 0)  // only AL_ITER_AE is a valid flag.
+    ret = -7;
+  else
+    ret = advance_iter(iterp, &it);
 
-  struct item *it;
-  ret = advance_iter(iterp, &it);
   if (ret) {
     check_hash_iter_ae(iterp, ret);
     return ret;
@@ -1486,7 +1492,7 @@ al_pqueue_value_iter(struct al_pqueue_value_iter_t *vip,
       al_pqueue_value_iter_end(vip);
     } else {
       const char *msg = "";
-      if (vip->pi_pitr && vip->pi_pitr->ht)
+      if (vip->pi_pitr && vip->pi_pitr->ht && vip->pi_pitr->ht->err_msg)
 	msg = vip->pi_pitr->ht->err_msg;
       fprintf(stderr, "pqueue_value_iter %s advance error (code=%d)\n", msg, ret);
     }
@@ -2480,7 +2486,7 @@ al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
       al_sl_iter_end(iterp);
     } else {
       const char *msg = "";
-      if (iterp->sl_p)
+      if (iterp->sl_p && iterp->sl_p->err_msg)
 	msg = iterp->sl_p->err_msg;
       fprintf(stderr, "sl_iter %s advance error (code=%d)\n", msg, ret);
     }
@@ -2510,6 +2516,48 @@ al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
   struct al_skiplist_t *sl = itr->sl_p;
   itr->current_node = sl->head->forward[0];
   return 0;
+}
+
+inline static void
+ffk_swap(void *a, size_t x, size_t y)
+{
+  intptr_t tmp = *((intptr_t *)(a + sizeof(void *)*x));
+  *((intptr_t *)(a + sizeof(void *)*x)) = *((intptr_t *)(a + sizeof(void *)*y));
+  *((intptr_t *)(a + sizeof(void *)*y)) = tmp;
+}
+
+void
+ffk(void *base, size_t nel,
+    int (*compar)(const void *, const void *),
+    size_t topn)
+{
+  size_t left = 0;
+  size_t right = nel - 1;
+
+  while (left < right) {
+    size_t pvi = (left + right) / 2;
+    ffk_swap(base, pvi, right);
+
+    size_t npvi = left;
+    void *r = base + (sizeof(void *) * right);
+    size_t i;
+    for (i = left; i < right; i++) {
+      if ((*compar)(base + (sizeof(void *) * i), r) < 0) {
+	ffk_swap(base, npvi, i);
+	npvi++;
+      }
+    }
+    ffk_swap(base, right, npvi);
+
+    if (npvi == topn)
+      break;
+
+    if (topn < npvi)
+      right = npvi - 1;
+    else
+      left  = npvi + 1;
+  }
+  qsort(base, topn, sizeof(void *), compar);
 }
 
 /*****************************************************************/
