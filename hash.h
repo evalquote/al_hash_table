@@ -234,6 +234,10 @@ int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
 
 int al_linked_hash_get(struct al_hash_t *ht, char *key,
 		       struct al_linked_value_iter_t **v_iterp, int flag);
+int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
+		     struct al_lcdr_value_iter_t **v_iterp, int flag);
+int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
+			  struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk);
 int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
 		       struct al_pqueue_value_iter_t **v_iterp, int flag);
 
@@ -279,6 +283,13 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  * normal end. 
  */
 int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag);
+
+ /*
+  * iterate on only first top-k items.
+  * if topk == 0 or flag is AL_SORT_NO, same as al_hash_iter_init()
+  * top-n item appears arbitary order when AL_SORT_FFK_ONLY flag on.
+  *   (additional sort is cannceled)
+  */
 int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
 			   int flag, unsigned long topk);
 
@@ -364,6 +375,8 @@ int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
 
 int al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 		      struct al_lcdr_value_iter_t **v_iterp, int flag);
+int al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
+			   struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk);
 
 /*
  * destroy iterator
@@ -524,9 +537,9 @@ int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 /* find first key */
 /* qsort like interface, element size is sizeof(void *) */
 void
-ffk(void *base, unsigned long nel,
-    int (*compar)(const void *, const void *),
-    unsigned long topk);
+al_ffk(void *base, unsigned long nel,
+       int (*compar)(const void *, const void *),
+       unsigned long topk);
 
 /*
  *   utility

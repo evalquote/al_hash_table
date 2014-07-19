@@ -687,11 +687,11 @@ iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, unsigned lo
   int (*sf)(const void *, const void *) = sort_f(ht, flag);
 
   if (0 < topk && topk < sidx) {
-    ffk((void *)it_array, sidx, sf, topk);
+    al_ffk((void *)it_array, sidx, sf, topk);
     it_array = (struct item **)realloc(it_array, sizeof(struct item *) * topk);
     sidx = topk;
   }
-  if ((flag & AL_SORT_FFK_ONLY) == 0)
+  if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0)
     qsort((void *)it_array, sidx, sizeof(struct item *), sf);
 
   ip->sorted = it_array;
@@ -1026,19 +1026,14 @@ vn_num_cmp(const void *a, const void *b)
   return -str_num_cmp(*(link_value_t *)a, *(link_value_t *)b);
 }
 
-void
-sort_sarray(link_value_t *sarray, unsigned int nvalue, int flag)
+static int
+(*sort_vf(int flag))(const void *, const void *)
 {
   int so = flag & HASH_FLAG_SORT_ORD;
   if (flag & AL_SORT_NUMERIC) {
-    if (so == AL_SORT_DIC)
-      qsort((void *)sarray, nvalue, sizeof(link_value_t *), v_num_cmp);
-    else
-      qsort((void *)sarray, nvalue, sizeof(link_value_t *), vn_num_cmp);
-  } if (so == AL_SORT_DIC) {
-    qsort((void *)sarray, nvalue, sizeof(link_value_t *), v_cmp);
+    return so == AL_SORT_DIC ? v_num_cmp : vn_num_cmp;
   } else {
-    qsort((void *)sarray, nvalue, sizeof(link_value_t *), vn_cmp);
+    return so == AL_SORT_DIC ? v_cmp : vn_cmp;
   }
 }
 
@@ -1074,7 +1069,8 @@ mk_linked_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     for (nvalue = 0, lp = it->u.link; lp; lp = lp->link)
       sarray[nvalue++] = lp->value;
 
-    sort_sarray(sarray, nvalue, flag);
+    int (*sf)(const void *, const void *) = sort_vf(flag);
+    qsort((void *)sarray, nvalue, sizeof(link_value_t *), sf);
     vip->li_sorted = sarray;
   }
   vip->li_flag = flag & AL_ITER_AE;
@@ -1230,7 +1226,7 @@ al_is_linked_iter(struct al_hash_iter_t *iterp)
 
 static int
 mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
-		  struct al_lcdr_value_iter_t **v_iterp, int flag)
+		  struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned int topk)
 {
   int so = flag & HASH_FLAG_SORT_ORD;
 
@@ -1246,7 +1242,7 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   } else {
     unsigned int nvalue = vip->cd_max_index;
     lcdr_t *dp;
-    if (nvalue == 0) { // al_lcd_hash_nvalue() set vip->cd_max_index as correct value
+    if (nvalue == 0) { // al_lcdr_hash_nvalue() may set vip->cd_max_index to correct value
       for (dp = it->u.lcdr; dp; dp = dp->link)
 	nvalue += dp->va_used;
     }
@@ -1263,7 +1259,16 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 	sarray[nvalue++] = dp->va[i];
     }
 
-    sort_sarray(sarray, nvalue, flag);
+    int (*sf)(const void *, const void *) = sort_vf(flag);
+
+    if (0 < topk && topk < nvalue) {
+      al_ffk((void *)sarray, nvalue, sf, topk);
+      sarray = (link_value_t *)realloc(sarray, sizeof(link_value_t *) * topk);
+      nvalue = topk;
+      vip->cd_max_index = topk;
+    }
+    if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0)
+      qsort((void *)sarray, nvalue, sizeof(link_value_t *), sf);
     vip->cd_sorted = sarray;
   }
 
@@ -1275,8 +1280,8 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   return 0;
 }
 
-int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
-		     struct al_lcdr_value_iter_t **v_iterp, int flag)
+int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
+			  struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk)
 {
   int ret = 0;
   int so = flag & HASH_FLAG_SORT_ORD;
@@ -1295,7 +1300,7 @@ int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
   ip->hi_flag = ITER_FLAG_VIRTUAL;
   ip->ht = ht;
 
-  ret = mk_lcdr_hash_iter(it, ip, v_iterp, flag);
+  ret = mk_lcdr_hash_iter(it, ip, v_iterp, flag, topk);
   if (ret) {
     free((void *)ip);
     return ret;
@@ -1305,9 +1310,15 @@ int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
   return 0;
 }
 
+int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
+		     struct al_lcdr_value_iter_t **v_iterp, int flag)
+{
+  return al_lcdr_topk_hash_get(ht, key, v_iterp, flag, 0);
+}
+
 int
-al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-		  struct al_lcdr_value_iter_t **v_iterp, int flag)
+al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
+		       struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk)
 {
   int ret = 0;
   struct item *it;
@@ -1328,7 +1339,14 @@ al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
   }
 
   *key = it->key;
-  return mk_lcdr_hash_iter(it, iterp, v_iterp, flag);
+  return mk_lcdr_hash_iter(it, iterp, v_iterp, flag, topk);
+}
+
+int
+al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
+		  struct al_lcdr_value_iter_t **v_iterp, int flag)
+{
+  return al_lcdr_hash_topk_iter(iterp, key, v_iterp, flag, 0);
 }
 
 /* advance iterator */
@@ -2542,44 +2560,45 @@ al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
   return 0;
 }
 
+#define baseoff(base, index) ((base) + (sizeof(void *) * index))
+
 inline static void
 ffk_swap(void *a, unsigned long x, unsigned long y)
 {
-  intptr_t tmp = *((intptr_t *)(a + sizeof(void *)*x));
-  *((intptr_t *)(a + sizeof(void *)*x)) = *((intptr_t *)(a + sizeof(void *)*y));
-  *((intptr_t *)(a + sizeof(void *)*y)) = tmp;
+  intptr_t tmp = *((intptr_t *)baseoff(a, x));
+  *((intptr_t *)baseoff(a, x)) = *((intptr_t *)baseoff(a, y));
+  *((intptr_t *)baseoff(a, y)) = tmp;
 }
 
 void
-ffk(void *base, unsigned long nel,
+al_ffk(void *base, unsigned long nel,
     int (*compar)(const void *, const void *),
     unsigned long topn)
 {
-  unsigned long left = 0;
-  unsigned long right = nel - 1;
+  long left = 0;
+  long right = nel - 1;
 
   while (left < right) {
-    unsigned long pvi = (left + right) / 2;
+    long pvi = (left + right) / 2;
+    void *rv = baseoff(base, pvi);
     ffk_swap(base, pvi, right);
 
-    unsigned long npvi = left;
-    void *r = base + (sizeof(void *) * right);
-    unsigned long i;
-    for (i = left; i < right; i++) {
-      if ((*compar)(base + (sizeof(void *) * i), r) < 0) {
-	ffk_swap(base, npvi, i);
-	npvi++;
-      }
+    long ll = left - 1;
+    long rr = right;
+    for (;;) {
+      while ((*compar)(baseoff(base, ++ll), rv) < 0) ;
+      while ((*compar)(baseoff(base, --rr), rv) > 0) ;
+      if (ll >= rr) break;
+      ffk_swap(base, ll, rr);
     }
-    ffk_swap(base, right, npvi);
+    ffk_swap(base, right, ll);
 
-    if (npvi == topn)
-      break;
+    if (ll == topn) break;
 
-    if (topn < npvi)
-      right = npvi - 1;
+    if (topn < ll)
+      right = ll - 1;
     else
-      left  = npvi + 1;
+      left  = ll + 1;
   }
   // qsort(base, topn, sizeof(void *), compar);
 }
