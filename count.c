@@ -1,5 +1,5 @@
 /* example */
-/* cc -O2 -o count count.c hash.c */
+/* cc -O3 -o count count.c hash.c */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,13 +39,19 @@ main() {
     }
 #endif
   }
+  // al_out_hash_stat(ht_count, "ht_count");
 
   {
     struct al_hash_iter_t *itr;
     const char *ikey;
     value_t v;
 
-    ret = al_hash_iter_init(ht_count, &itr, AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE);
+    // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE);
+    ret = al_hash_topk_iter_init(ht_count, &itr,
+				 AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE|AL_SORT_FFK_ONLY,
+				 100);
+    // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_DIC|AL_ITER_AE);
+    // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_NO|AL_ITER_AE);
     if (ret)
       fprintf(stderr, "itr init %d\n", ret);
 

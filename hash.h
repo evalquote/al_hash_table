@@ -29,6 +29,7 @@ typedef const char * link_value_t;
 #define AL_SORT_COUNTER_DIC	0x2
 #define AL_SORT_NUMERIC		0x4
 #define AL_SORT_VALUE		0x8
+#define AL_SORT_FFK_ONLY	0x10
 #define AL_FLAG_NONE		AL_SORT_NO
 /* for iterator, call end() automatically at end of iteration */
 #define AL_ITER_AE		0x10000
@@ -278,6 +279,8 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  * normal end. 
  */
 int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag);
+int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
+			   int flag, unsigned long topk);
 
 /*
  * destroy iterator
@@ -519,11 +522,11 @@ int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
 int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 
 /* find first key */
-
+/* qsort like interface, element size is sizeof(void *) */
 void
-ffk(void *base, size_t nel,
+ffk(void *base, unsigned long nel,
     int (*compar)(const void *, const void *),
-    size_t topn);
+    unsigned long topk);
 
 /*
  *   utility

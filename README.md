@@ -2,7 +2,7 @@ Yet another reinventing the hash table library, sorry.
 
 in C, NOT thread safe, with iterators
 
-API are as follows. (from hash.h, not updated)
+API are as follows. (from hash.h, not up-to-date)
     
     int al_init_hash(int type, int bit, struct al_hash_t **htp)
     int al_set_pqueue_parameter(struct al_hash_t *ht,
@@ -39,6 +39,8 @@ API are as follows. (from hash.h, not updated)
     int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key)
+    int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
+			       int flag, unsigned long topk)
     int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
     int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v)
     int al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **ret_v)
@@ -86,3 +88,5 @@ API are as follows. (from hash.h, not updated)
     int al_sl_iter_end(struct al_skiplist_iter_t *iterp)
     int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
     int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp)
+    void ffk(void *base, unsigned long nel,
+             int (*compar)(const void *, const void *), unsigned long topk)

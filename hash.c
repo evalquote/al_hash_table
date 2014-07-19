@@ -632,109 +632,133 @@ itn_value_strnum_cmp(const void *a, const void *b)
   return -str_num_cmp((*(struct item **)a)->u.cstr, (*(struct item **)b)->u.cstr);
 }
 
+static int
+(*sort_f(struct al_hash_t *ht, int flag))(const void *, const void *)
+{
+  int so = flag & HASH_FLAG_SORT_ORD;
+
+  if (flag & AL_SORT_VALUE) {		// sort by value part
+    if ((ht->h_flag & HASH_FLAG_STRING) == 0) {
+      return so == AL_SORT_DIC ? it_num_value_cmp : itn_num_value_cmp;
+    } else if (flag & AL_SORT_NUMERIC) {
+      return so == AL_SORT_DIC ? it_value_strnum_cmp : itn_value_strnum_cmp;
+    } else {
+      return so == AL_SORT_DIC ? it_value_cmp : itn_value_cmp;
+    }
+  } else {				// sort by key part
+    if (flag & AL_SORT_NUMERIC) {
+      return so == AL_SORT_DIC ? it_num_cmp : itn_num_cmp;
+    } else {
+      return so == AL_SORT_DIC ? it_cmp : itn_cmp;
+    }
+  }
+}
+
+inline static int
+iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, unsigned long topk)
+{
+  long sidx = 0;
+  struct item **it_array = NULL;
+
+  it_array = (struct item **)malloc(sizeof(struct item *) *
+				    (ht->n_entries + ht->n_entries_old));
+  if (!it_array) {
+    free((void *)ip);
+    return -2;
+  }
+  if (ht->rehashing) {
+    sidx = add_it_to_array_for_sorting(it_array, sidx, ht->hash_table_old,
+				       ht->rehashing_front, hash_size(ht->hash_bit - 1),
+				       ht->n_entries_old);
+    if (sidx != ht->n_entries_old) {
+      free((void *)it_array);
+      free((void *)ip);
+      return -99;
+    }
+  }
+  sidx = add_it_to_array_for_sorting(it_array, sidx, ht->hash_table,
+				     0, hash_size(ht->hash_bit), ht->n_entries);
+  if (sidx != ht->n_entries + ht->n_entries_old) {
+    free((void *)it_array);
+    free((void *)ip);
+    return -99;
+  }
+
+  int (*sf)(const void *, const void *) = sort_f(ht, flag);
+
+  if (0 < topk && topk < sidx) {
+    ffk((void *)it_array, sidx, sf, topk);
+    it_array = (struct item **)realloc(it_array, sizeof(struct item *) * topk);
+    sidx = topk;
+  }
+  if ((flag & AL_SORT_FFK_ONLY) == 0)
+    qsort((void *)it_array, sidx, sizeof(struct item *), sf);
+
+  ip->sorted = it_array;
+  ip->oindex = sidx;	// max index
+  return 0;
+}
+
+inline static int
+iter_nsort(struct al_hash_t *ht, struct al_hash_iter_t *ip)
+{
+  unsigned int index = 0;
+  unsigned int old_size = hash_size(ht->hash_bit - 1);
+  unsigned int total_size = old_size + hash_size(ht->hash_bit);
+  struct item **place = NULL;
+
+  if (ht->rehashing) {
+    index = ht->rehashing_front;
+    place = &ht->hash_table_old[ht->rehashing_front];
+  } else {
+    index = old_size;
+    place = &ht->hash_table[0];
+  }
+  while (! *place) {
+    if (++index == old_size)
+      place = &ht->hash_table[0];
+    if (index == total_size) {
+      place = NULL;
+      break;
+    }
+    place++;
+  }
+  ip->index = index;
+  ip->place = place;
+  return 0;
+}
+
 int
-al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag)
+al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
+		       int flag, unsigned long topk)
 {
   if (!ht || !iterp) return -3;
   *iterp = NULL;
 
+  int ret = 0;
   int so = flag & HASH_FLAG_SORT_ORD;
   struct al_hash_iter_t *ip = (struct al_hash_iter_t *)
                                calloc(1, sizeof(struct al_hash_iter_t));
   if (!ip) return -2;
   if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so) return -7;
 
-  if (so != AL_SORT_NO) { // do sort keys
-    long sidx = 0;
-    struct item **it_array = NULL;
-
-    it_array = (struct item **)malloc(sizeof(struct item *) *
-				      (ht->n_entries + ht->n_entries_old));
-    if (!it_array) {
-      free((void *)ip);
-      return -2;
-    }
-    if (ht->rehashing) {
-      sidx = add_it_to_array_for_sorting(it_array, sidx, ht->hash_table_old,
-					 ht->rehashing_front, hash_size(ht->hash_bit - 1),
-					 ht->n_entries_old);
-      if (sidx != ht->n_entries_old) {
-	free((void *)it_array);
-	free((void *)ip);
-	return -99;
-      }
-    }
-    sidx = add_it_to_array_for_sorting(it_array, sidx, ht->hash_table,
-				       0, hash_size(ht->hash_bit), ht->n_entries);
-    if (sidx != ht->n_entries + ht->n_entries_old) {
-      free((void *)it_array);
-      free((void *)ip);
-      return -99;
-    }
-    if (flag & AL_SORT_VALUE) { // sort by value part
-
-      if ((ht->h_flag & HASH_FLAG_STRING) == 0) { // scalar
-	if (so == AL_SORT_DIC)
-	  qsort((void *)it_array, sidx, sizeof(struct item *), it_num_value_cmp);
-	else
-	  qsort((void *)it_array, sidx, sizeof(struct item *), itn_num_value_cmp);
-      } else if (flag & AL_SORT_NUMERIC) {
-	if (so == AL_SORT_DIC)
-	  qsort((void *)it_array, sidx, sizeof(struct item *), it_value_strnum_cmp);
-	else
-	  qsort((void *)it_array, sidx, sizeof(struct item *), itn_value_strnum_cmp);
-      } else {
-	if (so == AL_SORT_DIC)
-	  qsort((void *)it_array, sidx, sizeof(struct item *), it_value_cmp);
-	else
-	  qsort((void *)it_array, sidx, sizeof(struct item *), itn_value_cmp);
-      }
-    } else if (flag & AL_SORT_NUMERIC) {
-      if (so == AL_SORT_DIC)
-	qsort((void *)it_array, sidx, sizeof(struct item *), it_num_cmp);
-      else
-	qsort((void *)it_array, sidx, sizeof(struct item *), itn_num_cmp);
-    } else if (so == AL_SORT_DIC) {
-      qsort((void *)it_array, sidx, sizeof(struct item *), it_cmp);
-    } else {
-      qsort((void *)it_array, sidx, sizeof(struct item *), itn_cmp);
-    }
-
-    ip->sorted = it_array;
-    ip->oindex = sidx;	// max index
-  } else {
-    /* AL_SORT_NO */
-
-    unsigned int index = 0;
-    unsigned int old_size = hash_size(ht->hash_bit - 1);
-    unsigned int total_size = old_size + hash_size(ht->hash_bit);
-    struct item **place = NULL;
-
-    if (ht->rehashing) {
-      index = ht->rehashing_front;
-      place = &ht->hash_table_old[ht->rehashing_front];
-    } else {
-      index = old_size;
-      place = &ht->hash_table[0];
-    }
-    while (! *place) {
-      if (++index == old_size)
-	place = &ht->hash_table[0];
-      if (index == total_size) {
-	place = NULL;
-	break;
-      }
-      place++;
-    }
-    ip->index = index;
-    ip->place = place;
+  if (so == AL_SORT_NO)
+    ret = iter_nsort(ht, ip);
+  else
+    ret = iter_sort(ht, ip, flag, topk);
+  if (ret == 0) { // no error
+    ip->hi_flag = ht->h_flag | (flag & AL_ITER_AE);
+    ip->ht = ht;
+    *iterp = ip;
+    attach_iter(ht, ip);
   }
+  return ret;
+}
 
-  ip->hi_flag = ht->h_flag | (flag & AL_ITER_AE);
-  ip->ht = ht;
-  *iterp = ip;
-  attach_iter(ht, ip);
-  return 0;
+int
+al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag)
+{
+  return al_hash_topk_iter_init(ht, iterp, flag, 0);
 }
 
 static int
@@ -2519,7 +2543,7 @@ al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
 }
 
 inline static void
-ffk_swap(void *a, size_t x, size_t y)
+ffk_swap(void *a, unsigned long x, unsigned long y)
 {
   intptr_t tmp = *((intptr_t *)(a + sizeof(void *)*x));
   *((intptr_t *)(a + sizeof(void *)*x)) = *((intptr_t *)(a + sizeof(void *)*y));
@@ -2527,20 +2551,20 @@ ffk_swap(void *a, size_t x, size_t y)
 }
 
 void
-ffk(void *base, size_t nel,
+ffk(void *base, unsigned long nel,
     int (*compar)(const void *, const void *),
-    size_t topn)
+    unsigned long topn)
 {
-  size_t left = 0;
-  size_t right = nel - 1;
+  unsigned long left = 0;
+  unsigned long right = nel - 1;
 
   while (left < right) {
-    size_t pvi = (left + right) / 2;
+    unsigned long pvi = (left + right) / 2;
     ffk_swap(base, pvi, right);
 
-    size_t npvi = left;
+    unsigned long npvi = left;
     void *r = base + (sizeof(void *) * right);
-    size_t i;
+    unsigned long i;
     for (i = left; i < right; i++) {
       if ((*compar)(base + (sizeof(void *) * i), r) < 0) {
 	ffk_swap(base, npvi, i);
@@ -2557,7 +2581,7 @@ ffk(void *base, size_t nel,
     else
       left  = npvi + 1;
   }
-  qsort(base, topn, sizeof(void *), compar);
+  // qsort(base, topn, sizeof(void *), compar);
 }
 
 /*****************************************************************/
