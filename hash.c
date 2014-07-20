@@ -574,8 +574,10 @@ str_num_cmp(const char *a, const char *b)
   nb = sscanf(b, "%lf", &db);
   if (na == 0 || nb == 0)
     return strcmp(a, b);
+  else if (da == db)
+    return 0;
   else
-    return da <= db ? -1 : 1;
+    return da < db ? -1 : 1;
 #else
   if (a[0] == '-' && b[0] == '-')
     return -strcmp(a, b);
@@ -599,12 +601,14 @@ itn_num_cmp(const void *a, const void *b)
 static int
 it_num_value_cmp(const void *a, const void *b)
 {
-  return (*(struct item **)a)->u.value <= (*(struct item **)b)->u.value ? -1 : 1;
+  if ((*(struct item **)a)->u.value == (*(struct item **)b)->u.value) return 0;
+  return (*(struct item **)a)->u.value < (*(struct item **)b)->u.value ? -1 : 1;
 }
 
 static int
 itn_num_value_cmp(const void *a, const void *b)
 {
+  if ((*(struct item **)a)->u.value == (*(struct item **)b)->u.value) return 0;
   return (*(struct item **)a)->u.value > (*(struct item **)b)->u.value ? -1 : 1;
 }
 
@@ -655,7 +659,7 @@ static int
 }
 
 inline static int
-iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, unsigned long topk)
+iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, long topk)
 {
   long sidx = 0;
   struct item **it_array = NULL;
@@ -686,10 +690,18 @@ iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, unsigned lo
 
   int (*sf)(const void *, const void *) = sort_f(ht, flag);
 
+  if (topk == AL_FFK_HALF)
+    topk = sidx / 2;
+
   if (0 < topk && topk < sidx) {
     al_ffk((void *)it_array, sidx, sf, topk);
     it_array = (struct item **)realloc(it_array, sizeof(struct item *) * topk);
     sidx = topk;
+    if (flag & AL_SORT_FFK_REV) {
+      // bit not HASH_FLAG_SORT_ORD part of flag
+      int f = (flag & ~HASH_FLAG_SORT_ORD) | ((~flag) & HASH_FLAG_SORT_ORD);
+      sf = sort_f(ht, f);	// reverse order
+    }
   }
   if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0)
     qsort((void *)it_array, sidx, sizeof(struct item *), sf);
@@ -730,7 +742,7 @@ iter_nsort(struct al_hash_t *ht, struct al_hash_iter_t *ip)
 
 int
 al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
-		       int flag, unsigned long topk)
+		       int flag, long topk)
 {
   if (!ht || !iterp) return -3;
   *iterp = NULL;
@@ -753,12 +765,6 @@ al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
     attach_iter(ht, ip);
   }
   return ret;
-}
-
-int
-al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag)
-{
-  return al_hash_topk_iter_init(ht, iterp, flag, 0);
 }
 
 static int
@@ -1226,7 +1232,7 @@ al_is_linked_iter(struct al_hash_iter_t *iterp)
 
 static int
 mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
-		  struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned int topk)
+		  struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
 {
   int so = flag & HASH_FLAG_SORT_ORD;
 
@@ -1261,11 +1267,19 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 
     int (*sf)(const void *, const void *) = sort_vf(flag);
 
+    if (topk == AL_FFK_HALF)
+      topk = nvalue / 2;
+
     if (0 < topk && topk < nvalue) {
       al_ffk((void *)sarray, nvalue, sf, topk);
       sarray = (link_value_t *)realloc(sarray, sizeof(link_value_t *) * topk);
       nvalue = topk;
       vip->cd_max_index = topk;
+      if (flag & AL_SORT_FFK_REV) {
+	// bit not HASH_FLAG_SORT_ORD part of flag
+	int f = (flag & ~HASH_FLAG_SORT_ORD) | ((~flag) & HASH_FLAG_SORT_ORD);
+	sf = sort_vf(f);	// reverse order
+      }
     }
     if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0)
       qsort((void *)sarray, nvalue, sizeof(link_value_t *), sf);
@@ -1281,7 +1295,7 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 }
 
 int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
-			  struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk)
+			  struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
 {
   int ret = 0;
   int so = flag & HASH_FLAG_SORT_ORD;
@@ -1310,15 +1324,9 @@ int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
   return 0;
 }
 
-int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
-		     struct al_lcdr_value_iter_t **v_iterp, int flag)
-{
-  return al_lcdr_topk_hash_get(ht, key, v_iterp, flag, 0);
-}
-
 int
 al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
-		       struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk)
+		       struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
 {
   int ret = 0;
   struct item *it;
@@ -1340,13 +1348,6 @@ al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
 
   *key = it->key;
   return mk_lcdr_hash_iter(it, iterp, v_iterp, flag, topk);
-}
-
-int
-al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-		  struct al_lcdr_value_iter_t **v_iterp, int flag)
-{
-  return al_lcdr_hash_topk_iter(iterp, key, v_iterp, flag, 0);
 }
 
 /* advance iterator */
@@ -2571,9 +2572,9 @@ ffk_swap(void *a, unsigned long x, unsigned long y)
 }
 
 void
-al_ffk(void *base, unsigned long nel,
-    int (*compar)(const void *, const void *),
-    unsigned long topn)
+al_ffk(void *base, long nel,
+       int (*compar)(const void *, const void *),
+       long topn)
 {
   long left = 0;
   long right = nel - 1;

@@ -30,6 +30,7 @@ typedef const char * link_value_t;
 #define AL_SORT_NUMERIC		0x4
 #define AL_SORT_VALUE		0x8
 #define AL_SORT_FFK_ONLY	0x10
+#define AL_SORT_FFK_REV		0x20
 #define AL_FLAG_NONE		AL_SORT_NO
 /* for iterator, call end() automatically at end of iteration */
 #define AL_ITER_AE		0x10000
@@ -40,6 +41,17 @@ typedef const char * link_value_t;
 #define HASH_TYPE_PQ		0x800
 #define HASH_TYPE_POINTER	0x1000
 #define HASH_TYPE_LCDR		0x2000
+
+/*
+ * this macro is sutable for 'topk' parameter, means half position of items
+ *
+ * ex.
+ *  ret = al_hash_topk_iter_init(ht_count, &itr,
+ *				 AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_SORT_FFK_REV,
+ *				 AL_FFK_HALF);
+ * The iterator itr points to the median of items in hash table ht_count.
+ */
+#define AL_FFK_HALF	(-2)
 
 #ifdef AL_HASH_O
 void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
@@ -234,10 +246,10 @@ int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
 
 int al_linked_hash_get(struct al_hash_t *ht, char *key,
 		       struct al_linked_value_iter_t **v_iterp, int flag);
-int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
-		     struct al_lcdr_value_iter_t **v_iterp, int flag);
 int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
-			  struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk);
+			  struct al_lcdr_value_iter_t **v_iterp, int flag, long topk);
+#define al_lcdr_hash_get(ht, key, v_iterp, flag) al_lcdr_topk_hash_get((ht), (key), (v_iterp), (flag), 0)
+
 int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
 		       struct al_pqueue_value_iter_t **v_iterp, int flag);
 
@@ -281,17 +293,24 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  * al_hash_auto_end_iter_init() create an iterator which will be automatic end
  * at end of iteration.  It is not necessary to call al_hash_iter_end() on
  * normal end. 
+ *
+ * Now, this function is implemented as macro, which calls al_hash_topk_iter_init()
  */
-int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag);
+/* int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag); */
 
  /*
-  * iterate on only first top-k items.
+  * Iterate on only first top-k items accoring to the specified sort order
+  *   AL_SORT_DIC or AL_SORT_COUNTER_DIC.
   * if topk == 0 or flag is AL_SORT_NO, same as al_hash_iter_init()
-  * top-n item appears arbitary order when AL_SORT_FFK_ONLY flag on.
+  * top k item appears arbitary order when AL_SORT_FFK_ONLY flag on.
   *   (additional sort is cannceled)
+  *   AL_SORT_FFK_REV reverse the order of the selected top k items.
+  * 
+  * The macro AL_FFK_HALF is sutable for 'topk' parameter, means half position of items (median).
+  * See above comment of AL_FFK_HALF.
   */
-int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
-			   int flag, unsigned long topk);
+int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag, long topk);
+#define al_hash_iter_init(ht, iterp, flag) al_hash_topk_iter_init((ht), (iterp), (flag), 0)
 
 /*
  * destroy iterator
@@ -373,10 +392,9 @@ int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
 
 /*** iterators for lcdr hash */
 
-int al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-		      struct al_lcdr_value_iter_t **v_iterp, int flag);
 int al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
-			   struct al_lcdr_value_iter_t **v_iterp, int flag, unsigned long topk);
+			   struct al_lcdr_value_iter_t **v_iterp, int flag, long topk);
+#define al_lcdr_hash_iter(iterp, key, v_iterp, flag) al_lcdr_hash_topk_iter((iterp), (key), (v_iterp), (flag), 0)
 
 /*
  * destroy iterator
@@ -537,9 +555,9 @@ int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 /* find first key */
 /* qsort like interface, element size is sizeof(void *) */
 void
-al_ffk(void *base, unsigned long nel,
+al_ffk(void *base, long nel,
        int (*compar)(const void *, const void *),
-       unsigned long topk);
+       long topk);
 
 /*
  *   utility

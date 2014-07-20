@@ -48,8 +48,8 @@ main() {
 
     // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE);
     ret = al_hash_topk_iter_init(ht_count, &itr,
-				 AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE|AL_SORT_FFK_ONLY,
-				 100);
+				 AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE,
+				 AL_FFK_HALF);
     // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_DIC|AL_ITER_AE);
     // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_NO|AL_ITER_AE);
     if (ret)
