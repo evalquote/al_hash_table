@@ -36,11 +36,13 @@ API are as follows. (from hash.h, not up-to-date)
                            struct al_pqueue_value_iter_t **v_iterp, int flag)
     int al_lcdr_hash_get(struct al_hash_t *ht, char *key,
 		         struct al_lcdr_value_iter_t **v_iterp, int flag)
+    int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
+    			      struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
     int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
     int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int sort_key)
     int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
-			       int flag, unsigned long topk)
+			       int flag, long topk)
     int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
     int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v)
     int al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **ret_v)
@@ -58,6 +60,8 @@ API are as follows. (from hash.h, not up-to-date)
 
     int al_lcdr_hash_iter(struct al_hash_iter_t *iterp, const char **key,
                           struct al_lcdr_value_iter_t **v_iterp, int sort_value)
+    int al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
+			       struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
     int al_lcdr_value_iter(struct al_lcdr_value_iter_t *v_iterp, link_value_t *ret_v)
     int al_lcdr_value_iter_end(struct al_lcdr_value_iter_t *v_iterp)
     int al_lcdr_hash_nvalue(struct al_lcdr_value_iter_t *v_iterp)
@@ -88,5 +92,5 @@ API are as follows. (from hash.h, not up-to-date)
     int al_sl_iter_end(struct al_skiplist_iter_t *iterp)
     int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
     int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp)
-    void ffk(void *base, unsigned long nel,
-             int (*compar)(const void *, const void *), unsigned long topk)
+    void al_ffk(void *base, unsigned long nel,
+                int (*compar)(const void *, const void *), long topk)
