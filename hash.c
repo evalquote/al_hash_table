@@ -226,7 +226,7 @@ do_rehashing(struct al_hash_t *ht)
   ht->hash_table_old = ht->hash_table;
   ht->hash_table = NULL;
   ret = resize_hash(ht->hash_bit + 1, ht);
-  if (ret) {
+  if (ret < 0) {
     /* unwind */
     ht->hash_table = ht->hash_table_old;
     ht->hash_table_old = NULL;
@@ -300,7 +300,7 @@ hash_v_insert(struct al_hash_t *ht, unsigned int hv, char *key, value_t v)
     return -2;
   }
   ret = hash_insert(ht, hv, key, it);
-  if (ret) {
+  if (ret < 0) {
     free((void *)it->key);
     free((void *)it);
   }
@@ -352,7 +352,7 @@ init_hash(int bit, struct al_hash_t **htp)
     bit = AL_DEFAULT_HASH_BIT;
 
   ret = resize_hash(bit, al_hash);
-  if (ret) return ret;
+  if (ret < 0) return ret;
 
   al_hash->moving_unit = 2 * bit;
   *htp = al_hash;
@@ -364,7 +364,7 @@ al_init_hash(int type, int bit, struct al_hash_t **htp)
 {
   if ((type & ~HASH_TYPE_MASK) != 0 || (type & (type - 1)) != 0) return -7;
   int ret = init_hash(bit, htp);
-  if (!ret)
+  if (0 <= ret)
     (*htp)->h_flag = type;
   return ret;
 }
@@ -758,7 +758,7 @@ al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
     ret = iter_nsort(ht, ip);
   else
     ret = iter_sort(ht, ip, flag, topk);
-  if (ret == 0) { // no error
+  if (0 <= ret) { // no error
     ip->hi_flag = ht->h_flag | (flag & AL_ITER_AE);
     ip->ht = ht;
     *iterp = ip;
@@ -837,7 +837,7 @@ al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
 
   *key = NULL;
   ret = advance_iter(iterp, &it);
-  if (!ret) {
+  if (0 <= ret) {
     *key = it->key;
     if (ret_v) *ret_v = it->u.value;
   } else {
@@ -855,7 +855,7 @@ al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *r
 
   *key = NULL;
   ret = advance_iter(iterp, &it);
-  if (!ret) {
+  if (0 <= ret) {
     *key = it->key;
     if (ret_v) *ret_v = it->u.cstr;
   } else {
@@ -873,7 +873,7 @@ al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **ret_
 
   *key = NULL;
   ret = advance_iter(iterp, &it);
-  if (!ret) {
+  if (0 <= ret) {
     *key = it->key;
     if (ret_v) *ret_v = it->u.ptr;
   } else {
@@ -1108,7 +1108,7 @@ int al_linked_hash_get(struct al_hash_t *ht, char *key,
   ip->ht = ht;
 
   ret = mk_linked_hash_iter(it, ip, v_iterp, flag);
-  if (ret) {
+  if (ret < 0) {
     free((void *)ip);
     return ret;
   }
@@ -1134,7 +1134,7 @@ al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
   else
     ret = advance_iter(iterp, &it);
 
-  if (ret) {
+  if (ret < 0) {
     check_hash_iter_ae(iterp, ret);
     return ret;
   }
@@ -1315,7 +1315,7 @@ int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
   ip->ht = ht;
 
   ret = mk_lcdr_hash_iter(it, ip, v_iterp, flag, topk);
-  if (ret) {
+  if (ret < 0) {
     free((void *)ip);
     return ret;
   }
@@ -1341,7 +1341,7 @@ al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
   else
     ret = advance_iter(iterp, &it);
 
-  if (ret) {
+  if (ret < 0) {
     check_hash_iter_ae(iterp, ret);
     return ret;
   }
@@ -1458,7 +1458,7 @@ mk_pqeueu_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 
   vip->sl = it->u.skiplist;
   ret = al_sl_iter_init(vip->sl, &vip->sl_iter, AL_FLAG_NONE);
-  if (ret) {
+  if (ret < 0) {
     free((void *)vip);
     return ret;
   }
@@ -1489,7 +1489,7 @@ int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
   ip->ht = ht;
 
   ret = mk_pqeueu_hash_iter(it, ip, v_iterp, flag);
-  if (ret) {
+  if (ret < 0) {
     free((void *)ip);
     return ret;
   }
@@ -1514,7 +1514,7 @@ int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
   else
     ret = advance_iter(iterp, &it);
 
-  if (ret) {
+  if (ret < 0) {
     check_hash_iter_ae(iterp, ret);
     return ret;
   }
@@ -1530,7 +1530,7 @@ al_pqueue_value_iter(struct al_pqueue_value_iter_t *vip,
 {	
   if (!vip) return -3;
   int ret = al_sl_iter(vip->sl_iter, keyp, ret_count);
-  if (ret && (vip->pi_flag & AL_ITER_AE)) { // auto end
+  if (ret < 0 && (vip->pi_flag & AL_ITER_AE)) { // auto end
     if (ret == -1) { // normal end
       al_pqueue_value_iter_end(vip);
     } else {
@@ -1707,7 +1707,7 @@ item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, v
   void *ptr;
   if (ht->dup_p) {
     ret = ht->dup_p(v, size, &ptr);
-    if (ret) return ret;
+    if (ret < 0) return ret;
   } else {
     ptr = malloc(size);
     if (!ptr) return -2;
@@ -1722,7 +1722,7 @@ item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, v
   } else {
     ret = hash_v_insert(ht, hv, key, (intptr_t)ptr);
   }
-  if (!ret && ret_v)
+  if (0 <= ret && ret_v)
     *ret_v = ptr;
   return ret;
 }
@@ -1851,8 +1851,14 @@ item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
-  if (!it)
+  if (!it) {
+#ifdef INC_INIT_RETURN_ONE
+    int ret = hash_v_insert(ht, hv, key, (value_t)off);
+    return ret == 0 ? 1 : ret;
+#else
     return hash_v_insert(ht, hv, key, (value_t)off);
+#endif
+  }
 
   it->u.value += off;
   if (ret_v)
@@ -1874,17 +1880,17 @@ add_value_to_pq(struct al_hash_t *ht, char *key, link_value_t v)
 
   struct al_skiplist_t *sl;
   ret = al_create_skiplist(&sl, ht->h_flag & HASH_FLAG_SORT_MASK);
-  if (ret) goto free;
+  if (ret < 0) goto free;
 
   it->u.skiplist = sl;
   ret = sl_inc_init_n(it->u.skiplist, v, 1, NULL, ht->pq_max_n);
-  if (ret) goto free;
+  if (ret < 0) goto free;
 
   it->key = strdup(key);
   if (!it->key) { ret = -2; goto free; }
 
   ret = hash_insert(ht, hv, key, it);
-  if (ret) goto free_key;
+  if (ret < 0) goto free_key;
 
   return 0;
 
@@ -1902,7 +1908,7 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
 {
   link_value_t lv;
   int ret = al_link_value(v, &lv);  // ex. strdup(v)
-  if (ret) return ret;
+  if (ret < 0) return ret;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   lcdr_t *ndp = NULL;
@@ -1939,7 +1945,7 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
   it->u.lcdr = ndp;
 
   ret = hash_insert(ht, hv, key, it);
-  if (ret) goto free_key;
+  if (ret < 0) goto free_key;
 
   return 0;
 
@@ -1974,7 +1980,7 @@ item_add_value(struct al_hash_t *ht, char *key, link_value_t v)
   if (!lp) return -2;
 
   ret = al_link_value(v, &lp->value);  // ex. strdup(v)
-  if (ret) {
+  if (ret < 0) {
     free((void *)lp);
     return ret;
   }
@@ -1998,7 +2004,7 @@ item_add_value(struct al_hash_t *ht, char *key, link_value_t v)
   it->u.link = lp;
 
   ret = hash_insert(ht, hv, key, it);
-  if (ret) goto free_key;
+  if (ret < 0) goto free_key;
 
   return 0;
 
@@ -2066,7 +2072,7 @@ al_out_hash_stat(struct al_hash_t *ht, const char *title)
   struct al_hash_stat_t stat = {0, 0, 0, 0, 0};
   al_chain_length_t acl;
   ret = al_hash_stat(ht, &stat, acl);
-  if (ret) return ret;
+  if (ret < 0) return ret;
   fprintf(stderr, "%s bit %u  nitem %lu  oitem %lu  rehash %d  cancel %lu\n",
 	  title,
 	  stat.al_hash_bit,
@@ -2399,7 +2405,7 @@ sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v)
   if (!sl || !key) return -3;
   if (!(np = find_node(sl, key, update))) {
     ret = node_set(sl, key, update, &np);
-    if (ret) return ret;
+    if (ret < 0) return ret;
   }
   np->u.value = v;
   return 0;
@@ -2417,11 +2423,11 @@ sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
 
   if (pq_k_cmp(sl, sl->last_node->key, key) <= 0) return 0;
   ret = sl_set(sl, key, v);
-  if (ret) return ret;
+  if (ret < 0) return ret;
 
   while (max_n < sl->n_entries) {
     ret = sl_delete_last_node(sl);
-    if (ret) return ret;
+    if (ret < 0) return ret;
   }
   return 0;
 }
@@ -2458,8 +2464,11 @@ sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
   if (!sl || !key) return -3;
   if (!(np = find_node(sl, key, update))) {
     ret = node_set(sl, key, update, &np);
-    if (ret) return ret;
+    if (ret < 0) return ret;
     np->u.value = (value_t)off;
+#ifdef INC_INIT_RETURN_ONE
+    return 1;
+#endif
   } else {
     np->u.value += off;
     if (ret_v)
@@ -2479,11 +2488,11 @@ sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, 
 
   if (pq_k_cmp(sl, sl->last_node->key, key) < 0) return 0;
   ret = sl_inc_init(sl, key, off, ret_v);
-  if (ret) return ret;
+  if (ret < 0) return ret;
 
   while (max_n < sl->n_entries) {
     ret = sl_delete_last_node(sl);
-    if (ret) return ret;
+    if (ret < 0) return ret;
   }
   return 0;
 }
@@ -2523,7 +2532,7 @@ al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
   int ret = -3;
   if (iterp)
     ret = iterp->current_node ? 0 : -1;
-  if (ret) {
+  if (ret < 0) {
     if (!(iterp->sl_flag & ITER_FLAG_AE)) return ret;
     if (ret == -1) {
       al_sl_iter_end(iterp);

@@ -26,13 +26,14 @@ struct lc {
 int
 lc_make_counter(double eps, struct lc **pret)
 {
-  int ret = 0;
+  int ret;
   if (!pret) return -3;
 
   struct lc *lcp = (struct lc *)calloc(1, sizeof(struct lc));
   if (!lcp) return -2;
 
-  if ((ret = al_init_hash(HASH_TYPE_SCALAR, AL_DEFAULT_HASH_BIT, &lcp->ht_count))) {
+  ret = al_init_hash(HASH_TYPE_SCALAR, AL_DEFAULT_HASH_BIT, &lcp->ht_count);
+  if (ret < 0) {
     free((void *)lcp);
     return ret;
   }
@@ -49,7 +50,7 @@ lc_make_counter(double eps, struct lc **pret)
 int
 lc_free_counter(struct lc *lcp)
 {
-  int ret = 0;
+  int ret;
   if (!lcp) return -3;
 
   ret = al_free_hash(lcp->ht_count);
@@ -60,19 +61,21 @@ lc_free_counter(struct lc *lcp)
 static void
 trim(struct lc *lcp)
 {
-  int ret = 0;
+  int ret;
   const char *key;
   value_t v, b;
 
   struct al_hash_iter_t *itr;
-  if ((ret = al_hash_iter_init(lcp->ht_count, &itr, AL_SORT_NO|AL_ITER_AE)))
+  ret = al_hash_iter_init(lcp->ht_count, &itr, AL_SORT_NO|AL_ITER_AE);
+  if (ret < 0)
     fprintf(stderr, "trim itr init %d\n", ret);
   lcp->ntrim++;
-  while (!(ret = al_hash_iter(itr, &key, &v))) {
+  while (0 <= (ret = al_hash_iter(itr, &key, &v))) {
     sep(b, v);
     if (v <= lcp->b_current - b) {
       ret = item_delete_iter(itr);
-      if (ret) fprintf(stderr, "trim delete %d\n", ret);
+      if (ret < 0)
+	fprintf(stderr, "trim delete %d\n", ret);
       lcp->n_del_item++;
     }
   }
@@ -87,7 +90,8 @@ lc_count_up(struct lc *lcp, char *line, value_t *ret_v)
   value_t v = -1;
   lcp->nitem++;
 
-  if ((ret = item_inc_init(lcp->ht_count, line, (1U<<LC_VBIT), &v))) return ret;
+  ret = item_inc_init(lcp->ht_count, line, (1U<<LC_VBIT), &v);
+  if (ret < 0) return ret;
   if (v == -1) { /* first appearance */
     item_replace(lcp->ht_count, line, com((lcp->b_current - 1), 1));
     v = 1;
@@ -127,7 +131,8 @@ lc_counter_iter_init(struct lc *lcp, int tc, struct lc_iter **ret_iter, int sort
   struct lc_iter *itr= (struct lc_iter *)malloc(sizeof(struct lc_iter));
   if (!itr) return -2;
 
-  if ((ret = al_hash_iter_init(lcp->ht_count, &hitr, sort & ~AL_ITER_AE))) {
+  ret = al_hash_iter_init(lcp->ht_count, &hitr, sort & ~AL_ITER_AE);
+  if (ret < 0) {
     free((void *)itr);
     return -2;
   }
@@ -157,7 +162,7 @@ lc_counter_iter(struct lc_iter *itr, const char **ikey, value_t *retv, value_t *
   if (retb) *retb = 0;
   *ikey = NULL;
   if (itr) {
-    while (!(ret = al_hash_iter(itr->hitr, &k, &v))) {
+    while (0 <= (ret = al_hash_iter(itr->hitr, &k, &v))) {
       b = 0;
       sep(b, v);
       if (itr->tc <= v + b) { // b: maximum error.
@@ -168,7 +173,7 @@ lc_counter_iter(struct lc_iter *itr, const char **ikey, value_t *retv, value_t *
       }
     }
   }
-  if (ret && (itr->lc_flag & AL_ITER_AE)) {
+  if (ret < 0 && (itr->lc_flag & AL_ITER_AE)) {
     if (ret == -1)
       lc_counter_iter_end(itr);
     else
@@ -212,9 +217,9 @@ print_counter(struct lc *lcp, int tc)
   
   ret = lc_counter_iter_init(lcp, tc, &itr,
 			     AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_SORT_NUMERIC|AL_ITER_AE);
-  if (ret) fprintf(stderr, "print counter iter init %d\n", ret);
-
-  while (!(ret = lc_counter_iter(itr, &ikey, &v, &b)))
+  if (ret < 0) fprintf(stderr, "print counter iter init %d\n", ret);
+  
+  while (0 <= (ret = lc_counter_iter(itr, &ikey, &v, &b)))
     printf("%s\t%ld\t%ld\n", ikey, v, b);
 
   // lc_stat(lcp);
@@ -228,7 +233,7 @@ main()
   struct lc *lcp = NULL;
 
   ret = lc_make_counter(1e-6, &lcp);
-  if (ret) {
+  if (ret < 0) {
     fprintf(stderr, "lc_make_counter %d\n", ret);
     exit(1);
   }
@@ -238,7 +243,7 @@ main()
     if (0 < len) line[len - 1] = '\0';
 #if 0
     ret = lc_count_up(lcp, line, NULL);
-    if (ret)
+    if (ret < 0)
       fprintf(stderr, "count_up exit %d\n", ret);
 #else
     char *ap, *tmp_cp;
@@ -246,7 +251,7 @@ main()
     while ((ap = strsep(&tmp_cp, " \t")) != NULL) {
       if (*ap == '\0') continue;
       ret = lc_count_up(lcp, ap, NULL);
-      if (ret)
+      if (ret < 0)
 	fprintf(stderr, "count_up exit %d\n", ret);
     }
 #endif

@@ -14,7 +14,8 @@
 
 /* swicth */
 #undef NUMSCAN
-#undef ITEM_PV	/* define ITEM_PV enables item_xxx_pv() functions */
+#undef ITEM_PV	            /* define ITEM_PV enables item_xxx_pv() functions */
+#undef INC_INIT_RETURN_ONE  /* inc_init() return 1 when new key */
 		   
 /* type of hash entry scalar value */
 typedef long value_t;
@@ -258,16 +259,17 @@ int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
  * item_inc():
  *   if key is found, then increment value field by 'off' and
  *     set incremented value to *ret_v, and return 0
- *   if key if not found, then return -1. *ret_v is not changed.
+ *   if key is not found, then return -1. *ret_v is not changed.
  *
  * item_inc_init():
  *   if key is found, then increment value field by 'off' and
  *     set incremented value to *ret_v, and return 0
- *   if key if not found, add key with 'off' as initial value.
- *     *ret_v is not changed.
- *   return 0, on successfully key adding,
- *   return -2, allocation fails
- *   return -6, ht is string hash
+ *   if key is not found, add key with 'off' as initial value.
+ *     *ret_v is not modified.
+ *     return 0, on successfully key adding, (undef   INC_INIT_RETURN_ONE)
+ *     return 1, on successfully key adding, (defined INC_INIT_RETURN_ONE)
+ *     return -2, allocation fails
+ *     return -6, ht is string hash
  */
 int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
 int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
@@ -534,9 +536,20 @@ int sl_key(struct al_skiplist_t *sl, pq_key_t key);
 int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
 
 /*
- *  return -2, allocation fails
+ *  if key is found, then increment value field by 'off' and
+ *    set incremented value to *ret_v, and return 0
+ *  if key is not found, add key with 'off' as initial value.
+ *    *ret_v is not modified.
+ *    return 0, on successfully key adding, (undef   INC_INIT_RETURN_ONE)
+ *    return 1, on successfully key adding, (defined INC_INIT_RETURN_ONE)
+ *    return -2, allocation fails
  */
 int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v);
+
+/*
+ *  Same as sl_inc_init() except number of skiplist item is limited by max_n.
+ *  return 0 when key is not inserted by max_n limitation.
+ */
 int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n);
 
 /*
