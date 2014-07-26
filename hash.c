@@ -98,6 +98,8 @@ struct al_hash_t {
   unsigned long pq_max_n;	// priority queue, max number of entries
   int (*dup_p)(void *ptr, unsigned int size, void **ret_v);  // pointer hash pointer duplication
   int (*free_p)(void *ptr);				     // pointer hash pointer free
+  int (*sort_p)(const void *, const void *);		     // pointer hash pointer sort
+  int (*sort_rev_p)(const void *, const void *);	     // pointer hash pointer sort (rev)
   unsigned int h_flag;		// sort order, ...
   const char *err_msg;		// output on auto ended iterator abend
 };
@@ -389,18 +391,27 @@ al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_
 int
 al_set_pointer_hash_parameter(struct al_hash_t *ht,
 			      int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
-			      int (*free_p)(void *ptr))
+			      int (*free_p)(void *ptr),
+			      int (*sort_p)(const void *, const void *),
+			      int (*sort_rev_p)(const void *, const void *))
 {
   if (!ht) return -3;
   if (!(ht->h_flag & HASH_FLAG_POINTER)) return -6;
   if (ht->h_flag & HASH_FLAG_PARAM_SET) return -6; // parameter already set
-  if (dup_p)
-    ht->dup_p = dup_p;
-  if (free_p)
-    ht->free_p = free_p;
+  ht->dup_p = dup_p;
+  ht->free_p = free_p;
+  ht->sort_p = sort_p;
+  ht->sort_rev_p = sort_rev_p;
+
   ht->h_flag |= HASH_FLAG_PARAM_SET;
 
   return 0;
+}
+
+void *
+al_get_pointer_hash_pointer(const void *a)
+{
+  return (*(struct item **)a)->u.ptr;
 }
 
 static void
@@ -642,7 +653,9 @@ static int
   int so = flag & HASH_FLAG_SORT_ORD;
 
   if (flag & AL_SORT_VALUE) {		// sort by value part
-    if ((ht->h_flag & HASH_FLAG_STRING) == 0) {
+    if ((ht->h_flag & HASH_FLAG_POINTER) != 0) {
+      return so == AL_SORT_DIC ? ht->sort_p : ht->sort_rev_p; // may be NULL
+    } else if ((ht->h_flag & HASH_FLAG_STRING) == 0) {
       return so == AL_SORT_DIC ? it_num_value_cmp : itn_num_value_cmp;
     } else if (flag & AL_SORT_NUMERIC) {
       return so == AL_SORT_DIC ? it_value_strnum_cmp : itn_value_strnum_cmp;
@@ -689,6 +702,8 @@ iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, long topk)
   }
 
   int (*sf)(const void *, const void *) = sort_f(ht, flag);
+  if (sf == NULL)
+    return -8;
 
   if (topk == AL_FFK_HALF)
     topk = sidx / 2;
@@ -823,7 +838,12 @@ check_hash_iter_ae(struct al_hash_iter_t *iterp, int ret) {
       const char *msg = "";
       if (iterp->ht && iterp->ht->err_msg)
 	msg = iterp->ht->err_msg;
-      fprintf(stderr, "hash_iter %s advance error (code=%d)\n", msg, ret);
+      fprintf(stderr, "hash_iter %s advance error (code=%d)", msg, ret);
+      if (ret == -4) {
+	al_hash_iter_end(iterp);
+	fprintf(stderr, ", iter_end() done");
+      }
+      fprintf(stderr, "\n");
     }
   }
 }

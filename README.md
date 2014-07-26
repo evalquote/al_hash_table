@@ -8,8 +8,12 @@ API are as follows. (from hash.h, not up-to-date)
     int al_set_pqueue_parameter(struct al_hash_t *ht,
                                 int sort_order, unsigned long max_n)
     int al_set_pointer_hash_parameter(struct al_hash_t *ht,
-                                      int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
-                                      int (*free_p)(void *ptr))
+				      int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
+				      int (*free_p)(void *ptr),
+				      int (*sort_p)(const void *, const void *),
+				      int (*sort_rev_p)(const void *, const void *))
+    void *al_get_pointer_hash_pointer(const void *a);
+
     int al_free_hash(struct al_hash_t *ht)
 
     int al_hash_stat(struct al_hash_t *ht,

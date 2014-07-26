@@ -147,7 +147,10 @@ typedef unsigned long al_chain_length_t[11];
  * al_set_pointer_hash_parameter
  *  dup_p   value duplication function   default: retp = malloc(size); memcpy(retp, ptr, size);
  *  free_p  value pointer free function  default: free(ptr);
- *
+ *  sort_p  value pointer compare function  default: NULL
+ *  sort_rev_p  value pointer compare reverse function  default: NULL
+ *    pass compare function parameter to al_get_pointer_hash_pointer(),
+ *    pointer to user structure is returned.
  *
  * return -2 allocation fails 
  */
@@ -155,7 +158,10 @@ int al_init_hash(int type, int bit, struct al_hash_t **htp);
 int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
 int al_set_pointer_hash_parameter(struct al_hash_t *ht,
 				  int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
-				  int (*free_p)(void *ptr));
+				  int (*free_p)(void *ptr),
+				  int (*sort_p)(const void *, const void *),
+				  int (*sort_rev_p)(const void *, const void *));
+void *al_get_pointer_hash_pointer(const void *a);
 
 /*
  * destroy hash table
@@ -277,7 +283,7 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
 /* iterators */
 
 /*
- * create an iterator attached to ht1
+ * create an iterator attached to ht
  *   after first al_hash_iter() call, the iterator points entries
  *    (when hash table is not empty)
  *  flag AL_SORT_NO:          item appears arbitary order.
@@ -289,6 +295,7 @@ int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
  *       logior AL_ITER_AE:   invoke al_hash_iter_end() automatically at end of iteration,
  *                            do not call al_hash_iter_end() again.
  *       else: return -7
+ *   pointer_hash is not accept AL_SORT_VALUE flag, return -8 if set.
  * return -2, allocation fails
  * return -99, internal error
  *
