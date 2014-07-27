@@ -350,7 +350,7 @@ init_hash(int bit, struct al_hash_t **htp)
   struct al_hash_t *al_hash = (struct al_hash_t *)calloc(1, sizeof(struct al_hash_t));
   if (!al_hash) return -2;
 
-  if (bit == 0)
+  if (bit <= 0)
     bit = AL_DEFAULT_HASH_BIT;
 
   ret = resize_hash(bit, al_hash);
@@ -372,11 +372,11 @@ al_init_hash(int type, int bit, struct al_hash_t **htp)
 }
 
 int
-al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n)
+al_set_pqueue_hash_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n)
 {
   if (!ht) return -3;
   if (!(ht->h_flag & HASH_FLAG_PQ)) return -6;
-  if (ht->h_flag & HASH_FLAG_PARAM_SET) return -6; // parameter already set
+  if (ht->h_flag & HASH_FLAG_PARAM_SET) return -9; // parameter already set
   int so = sort_order & HASH_FLAG_SORT_ORD;
   if (so != AL_SORT_DIC && so != AL_SORT_COUNTER_DIC) return -7;
 
@@ -397,7 +397,7 @@ al_set_pointer_hash_parameter(struct al_hash_t *ht,
 {
   if (!ht) return -3;
   if (!(ht->h_flag & HASH_FLAG_POINTER)) return -6;
-  if (ht->h_flag & HASH_FLAG_PARAM_SET) return -6; // parameter already set
+  if (ht->h_flag & HASH_FLAG_PARAM_SET) return -9; // parameter already set
   ht->dup_p = dup_p;
   ht->free_p = free_p;
   ht->sort_p = sort_p;
@@ -419,7 +419,7 @@ free_linked_value(link_t *lp)
 {
   while (lp) {
     link_t *nextp = lp->link;
-    al_free_linked_value(lp->value);
+    free((void *)lp->value);
     free((void *)lp);
     lp = nextp;
   }
@@ -432,7 +432,7 @@ free_lcdr_value(lcdr_t *dp)
   while (dp) {
     lcdr_t *nextp = dp->link;
     for (i = dp->va_used; 0 < i;)
-      al_free_linked_value(dp->va[--i]);
+      free((void *)dp->va[--i]);
     free((void *) dp);
     dp = nextp;
   }
@@ -443,7 +443,7 @@ free_value(struct al_hash_t *ht, struct item *it)
 {
   switch (ht->h_flag & HASH_TYPE_MASK) {
   case HASH_FLAG_STRING:
-    al_free_linked_value(it->u.cstr);
+    free((void *)it->u.cstr);
     break;
   case HASH_FLAG_POINTER:
     if (ht->free_p)
@@ -653,7 +653,9 @@ static int
   int so = flag & HASH_FLAG_SORT_ORD;
 
   if (flag & AL_SORT_VALUE) {		// sort by value part
-    if ((ht->h_flag & HASH_FLAG_POINTER) != 0) {
+    if ((ht->h_flag & (HASH_FLAG_LINKED|HASH_FLAG_PQ|HASH_FLAG_LCDR)) != 0) {
+      return NULL;
+    } else if ((ht->h_flag & HASH_FLAG_POINTER) != 0) {
       return so == AL_SORT_DIC ? ht->sort_p : ht->sort_rev_p; // may be NULL
     } else if ((ht->h_flag & HASH_FLAG_STRING) == 0) {
       return so == AL_SORT_DIC ? it_num_value_cmp : itn_num_value_cmp;
@@ -1563,7 +1565,8 @@ al_pqueue_value_iter(struct al_pqueue_value_iter_t *vip,
   return ret;
 }
 
-int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *vip)
+int
+al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *vip)
 {
   if (!vip) return -3;
   al_sl_iter_end(vip->sl_iter);
@@ -1583,7 +1586,8 @@ al_pqueue_hash_nvalue(struct al_pqueue_value_iter_t *vip)
   return sl_n_entries(vip->sl);
 }
 
-int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *vip)
+int
+al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *vip)
 {
   if (!vip) return -3;
   return al_sl_rewind_iter(vip->sl_iter);
@@ -1704,15 +1708,18 @@ item_set_str(struct al_hash_t *ht, char *key, link_value_t v)
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
-  char *dp = strdup(v);
-  if (!dp) return -2;
+  link_value_t lv = strdup(v);
+  if (!lv) return -2;
 
   if (it) {
-    al_free_linked_value(it->u.cstr);
-    it->u.cstr = dp;
+    free((void *)it->u.cstr);
+    it->u.cstr = lv;
     return 0;
   }
-  return hash_v_insert(ht, hv, key, (intptr_t)dp);
+  int ret = hash_v_insert(ht, hv, key, (intptr_t)lv);
+  if (ret < 0)
+    free((void *)lv);
+  return ret;
 }
 
 int
@@ -1792,11 +1799,12 @@ item_replace_str(struct al_hash_t *ht, char *key, link_value_t v)
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
-  char *dp = strdup(v);
-  if (!dp) return -2;
+
   if (it) {
-    al_free_linked_value(it->u.cstr);
-    it->u.cstr = dp;
+    link_value_t lv = strdup(v);
+    if (!lv) return -2;
+    free((void *)it->u.cstr);
+    it->u.cstr = lv;
     return 0;
   }
   return -1;
@@ -1926,14 +1934,13 @@ add_value_to_pq(struct al_hash_t *ht, char *key, link_value_t v)
 static int
 add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
 {
-  link_value_t lv;
-  int ret = al_link_value(v, &lv);  // ex. strdup(v)
-  if (ret < 0) return ret;
+  link_value_t lv = strdup(v);
+  if (!lv) return -2;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   lcdr_t *ndp = NULL;
 
-  ret = -2;
+  int ret = -2;
   if (it) {
     lcdr_t *dp = it->u.lcdr;
     if (dp->va_size <= dp->va_used) {
@@ -1977,7 +1984,7 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
  free_ndp:
     free((void *)ndp);
  free_lv:
-    al_free_linked_value(lv);
+    free((void *)lv);
 
     return ret;
 }
@@ -1999,8 +2006,8 @@ item_add_value(struct al_hash_t *ht, char *key, link_value_t v)
   link_t *lp = (link_t *)malloc(sizeof(link_t));
   if (!lp) return -2;
 
-  ret = al_link_value(v, &lp->value);  // ex. strdup(v)
-  if (ret < 0) {
+  lp->value = strdup(v);
+  if (!lp->value) {
     free((void *)lp);
     return ret;
   }
@@ -2034,7 +2041,7 @@ item_add_value(struct al_hash_t *ht, char *key, link_value_t v)
  free:
   free((void *)it);
  free_lp:
-  al_free_linked_value(lp->value);
+  free((void *)lp->value);
   free((void *)lp);
 
   return ret;

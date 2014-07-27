@@ -5,8 +5,8 @@ in C, NOT thread safe, with iterators
 API are as follows. (from hash.h, not up-to-date)
     
     int al_init_hash(int type, int bit, struct al_hash_t **htp)
-    int al_set_pqueue_parameter(struct al_hash_t *ht,
-                                int sort_order, unsigned long max_n)
+    int al_set_pqueue_hash_parameter(struct al_hash_t *ht,
+                                     int sort_order, unsigned long max_n)
     int al_set_pointer_hash_parameter(struct al_hash_t *ht,
 				      int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
 				      int (*free_p)(void *ptr),

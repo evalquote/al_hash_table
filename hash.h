@@ -54,24 +54,6 @@ typedef const char * link_value_t;
  */
 #define AL_FFK_HALF	(-2)
 
-#ifdef AL_HASH_O
-void al_free_linked_value(link_value_t v) { if (v) free((void *)v); }
-// void al_free_linked_value(link_value_t v) { ; }
-
-int al_link_value(link_value_t v, link_value_t *vp) {
-  link_value_t cp = strdup(v);
-  if (cp) {
-    *vp = cp;
-    return 0;
-  } else {
-    *vp = NULL;
-    return -1;
-  }
-}
-
-// int al_link_value(link_value_t v, link_value_t *vp) { *vp = v; return 0; }
-#endif
-
 /* type of hash table */
 struct al_hash_t;
 
@@ -138,7 +120,7 @@ typedef unsigned long al_chain_length_t[11];
  * 
  * bit == 0, use AL_DEFAULT_HASH_BIT
  *
- * al_set_pqueue_parameter
+ * al_set_pqueue_hash_parameter
  *  sort_order: AL_SORT_DIC:         item appears dictionary order of key
  *              AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
  *              logior AL_SORT_NUMERIC: sort string numeric
@@ -153,9 +135,12 @@ typedef unsigned long al_chain_length_t[11];
  *    pointer to user structure is returned.
  *
  * return -2 allocation fails 
+ * return -3 ht is NULL
+ * return -6 ht is not pointer hash
+ * return -9 call again
  */
 int al_init_hash(int type, int bit, struct al_hash_t **htp);
-int al_set_pqueue_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
+int al_set_pqueue_hash_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
 int al_set_pointer_hash_parameter(struct al_hash_t *ht,
 				  int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
 				  int (*free_p)(void *ptr),
