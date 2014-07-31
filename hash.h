@@ -23,6 +23,17 @@ typedef long value_t;
 /* type of hash entry link value */
 typedef const char * link_value_t;
 
+
+/*
+ *  priority queue, type
+ */
+typedef value_t pq_value_t;
+typedef link_value_t pq_key_t;
+struct al_skiplist_t;
+struct al_skiplist_iter_t;
+
+
+
 /* flags */
 /* sort order */
 #define AL_SORT_NO		0x0
@@ -38,10 +49,10 @@ typedef const char * link_value_t;
 
 #define HASH_TYPE_SCALAR	0x100
 #define HASH_TYPE_STRING	0x200
-#define HASH_TYPE_LINKED	0x400
+#define HASH_TYPE_LIST		0x400
 #define HASH_TYPE_PQ		0x800
 #define HASH_TYPE_POINTER	0x1000
-#define HASH_TYPE_LCDR		0x2000
+
 
 /*
  * this macro is sutable for 'topk' parameter, means half position of items
@@ -60,11 +71,9 @@ struct al_hash_t;
 /* type of iterator pointed to hash table */
 struct al_hash_iter_t;
 
-/* type of iterator pointed to linked hash table */
-struct al_linked_value_iter_t;
 
-/* type of iterator pointed to lcdr hash table */
-struct al_lcdr_value_iter_t;
+/* type of iterator pointed to list hash table */
+struct al_list_value_iter_t;
 
 /* type of iterator pointed to priority queue hash table */
 struct al_pqueue_value_iter_t;
@@ -114,8 +123,7 @@ typedef unsigned long al_chain_length_t[11];
  *       HASH_TYPE_STRING    char *
  *       HASH_TYPE_POINTER   void *
  *    multiple (char *) values for a key
- *       HASH_TYPE_LINKED
- *       HASH_TYPE_LCDR    // alternative of TYPE_LINKED, list is represented by cdr coding.
+ *       HASH_TYPE_LIST    // list is represented by cdr coding.
  *       HASH_TYPE_PQ      // priority queue
  * 
  * bit == 0, use AL_DEFAULT_HASH_BIT
@@ -182,12 +190,10 @@ int al_hash_n_iterators(struct al_hash_t *ht);
  * predicate
  * return  0: yes,  return -1: no
  */
-int al_is_linked_hash(struct al_hash_t *ht);
-int al_is_linked_iter(struct al_hash_iter_t *iterp);
 int al_is_pqueue_hash(struct al_hash_t *ht);
 int al_is_pqueue_iter(struct al_hash_iter_t *iterp);
-int al_is_lcdr_hash(struct al_hash_t *ht);
-int al_is_lcdr_iter(struct al_hash_iter_t *iterp);
+int al_is_list_hash(struct al_hash_t *ht);
+int al_is_list_iter(struct al_hash_iter_t *iterp);
 
 /*
  * set key and value to hash table
@@ -196,6 +202,7 @@ int al_is_lcdr_iter(struct al_hash_iter_t *iterp);
  * if ret_pv is not NULL, return previous value (when define ITEM_PV)
  * item_set_pointer2() if ret_v is not NULL, return duplicated pointer (that ht points) of v
  * return -2, allocation fails
+ * item_set_pointer[2](), v must not be NULL or return -3
  */
 int item_set(struct al_hash_t *ht, char *key, value_t v);
 int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
@@ -204,11 +211,14 @@ int item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size
 int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v);
 
 /*
- * add value to linked, lcdr or pqueue hashtable
+ * add value to list or pqueue hashtable
  * return -2, allocation fails
  * return -6, hash table type is not 'linked'
  */
-int item_add_value(struct al_hash_t *ht, char *key, link_value_t v);
+int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, link_value_t lv, int flag);
+#define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, HASH_TYPE_SCALAR)
+#define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), HASH_TYPE_STRING)
+#define item_add_value_pq(ht, key, lv) item_add_value_str((ht), (key), (lv))
 
 /*
  * find key on the hash table
@@ -236,11 +246,9 @@ int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v);
 int item_delete(struct al_hash_t *ht, char *key);
 int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
 
-int al_linked_hash_get(struct al_hash_t *ht, char *key,
-		       struct al_linked_value_iter_t **v_iterp, int flag);
-int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
-			  struct al_lcdr_value_iter_t **v_iterp, int flag, long topk);
-#define al_lcdr_hash_get(ht, key, v_iterp, flag) al_lcdr_topk_hash_get((ht), (key), (v_iterp), (flag), 0)
+int al_list_topk_hash_get(struct al_hash_t *ht, char *key,
+			  struct al_list_value_iter_t **v_iterp, int flag, long topk);
+#define al_list_hash_get(ht, key, v_iterp, flag) al_list_topk_hash_get((ht), (key), (v_iterp), (flag), 0)
 
 int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
 		       struct al_pqueue_value_iter_t **v_iterp, int flag);
@@ -262,8 +270,8 @@ int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
  *     return -2, allocation fails
  *     return -6, ht is string hash
  */
-int item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
-int item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v);
+int item_inc(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
+int item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
 
 /* iterators */
 
@@ -345,72 +353,35 @@ int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
  */
 int item_delete_iter(struct al_hash_iter_t *iterp);
 
+/*** iterators for list hash */
 
-/*** iterators for linked hash */
-
-/*
- * advance iterator pointed to linked_hash and create an another iterator for access values
- *  flag AL_SORT_NO:          item appears arbitary order.
- *       AL_SORT_DIC:         item appears dictionary order of key.
- *       AL_SORT_COUNTER_DIC: item appears counter dictionary order of key.
- *       logior AL_SORT_NUMERIC: sort string numeric.
- *       logior AL_ITER_AE:   invoke al_linked_value_iter_end() automatically
- *                                  at end of iteration.
- *          else: return -7
- *  return -2 allocation fails
- */
-int al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-			struct al_linked_value_iter_t **v_iterp, int flag);
+int al_list_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
+			   struct al_list_value_iter_t **v_iterp, int flag, long topk);
+#define al_list_hash_iter(iterp, key, v_iterp, flag) al_list_hash_topk_iter((iterp), (key), (v_iterp), (flag), 0)
 
 /*
  * destroy iterator
  */
-int al_linked_value_iter_end(struct al_linked_value_iter_t *v_iterp);
+int al_list_value_iter_end(struct al_list_value_iter_t *v_iterp);
 
 /*
  * advance value iterator
  * return -1, reached end
  */
-int al_linked_value_iter(struct al_linked_value_iter_t *v_iterp,
-			 link_value_t *ret_v);
+int al_list_value_iter(struct al_list_value_iter_t *v_iterp,
+		       value_t *ret_v);
+int al_list_value_iter_str(struct al_list_value_iter_t *v_iterp,
+			   link_value_t *ret_v);
 
 /*
  * Return number of values belong to value iterator.
  */
-int al_linked_hash_nvalue(struct al_linked_value_iter_t *v_iterp);
+int al_list_hash_nvalue(struct al_list_value_iter_t *v_iterp);
 
 /*
  * Rewind value iteration.
  */
-int al_linked_hash_rewind_value(struct al_linked_value_iter_t *v_iterp);
-
-/*** iterators for lcdr hash */
-
-int al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
-			   struct al_lcdr_value_iter_t **v_iterp, int flag, long topk);
-#define al_lcdr_hash_iter(iterp, key, v_iterp, flag) al_lcdr_hash_topk_iter((iterp), (key), (v_iterp), (flag), 0)
-
-/*
- * destroy iterator
- */
-int al_lcdr_value_iter_end(struct al_lcdr_value_iter_t *v_iterp);
-
-/*
- * advance value iterator
- * return -1, reached end
- */
-int al_lcdr_value_iter(struct al_lcdr_value_iter_t *v_iterp,
-			 link_value_t *ret_v);
-
-/*
- * Return number of values belong to value iterator.
- */
-int al_lcdr_hash_nvalue(struct al_lcdr_value_iter_t *v_iterp);
-
-/*
- * Rewind value iteration.
- */
-int al_lcdr_hash_rewind_value(struct al_lcdr_value_iter_t *v_iterp);
+int al_list_hash_rewind_value(struct al_list_value_iter_t *v_iterp);
 
 
 
@@ -436,7 +407,7 @@ int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp);
  * return -1, reached end
  */
 int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
-			 link_value_t *keyp, value_t *ret_count);
+			 link_value_t *keyp, pq_value_t *ret_count);
 
 /*
  * Return number of values belong to value iterator.
@@ -499,11 +470,6 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
 /*
  *  priority queue, implemented by skiplist
  */
-typedef value_t pq_value_t;
-typedef link_value_t pq_key_t;
-
-struct al_skiplist_t;
-struct al_skiplist_iter_t;
 
 /*
  *  return -2, allocation fails
@@ -519,13 +485,13 @@ int sl_set_skiplist_err_msg(struct al_skiplist_t *sl, const char *msg);
 /*
  *  return -2, allocation fails
  */
-int sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v);
-int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n);
+int sl_set(struct al_skiplist_t *sl, pq_key_t key, pq_value_t v);
+int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t v, unsigned long max_n);
 
 int sl_delete(struct al_skiplist_t *sl, pq_key_t key);
 int sl_delete_last_node(struct al_skiplist_t *sl);
 int sl_key(struct al_skiplist_t *sl, pq_key_t key);
-int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
+int sl_get(struct al_skiplist_t *sl, pq_key_t key, pq_value_t *ret_v);
 
 /*
  *  if key is found, then increment value field by 'off' and
@@ -536,13 +502,13 @@ int sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v);
  *    return 1, on successfully key adding, (defined INC_INIT_RETURN_ONE)
  *    return -2, allocation fails
  */
-int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v);
+int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t *ret_v);
 
 /*
  *  Same as sl_inc_init() except number of skiplist item is limited by max_n.
  *  return 0 when key is not inserted by max_n limitation.
  */
-int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n);
+int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t *ret_v, unsigned long max_n);
 
 /*
  *  create an iterator attached to sl
@@ -554,7 +520,7 @@ int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret
 int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp, int flag);
 
 int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
-int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v);
+int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v);
 int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 
 /* find first key */
@@ -572,7 +538,6 @@ al_ffk(void *base, long nel,
 #define _AL_FLSD(x, y) x _AL_S_(y)
 #define _AL_FLS _AL_FLSD(__FILE__, [line __LINE__])
 #define al_set_hash_err_msg(ht, msg) al_set_hash_err_msg_impl((ht), msg _AL_FLS)
-int al_set_hash_err_msg_impl(struct al_hash_t *ht, const char *msg); // msg must be string constant
 
 char *
 al_gettok(char *cp, char **savecp, char del);

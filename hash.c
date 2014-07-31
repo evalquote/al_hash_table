@@ -27,18 +27,18 @@
 #define MEAN_CHAIN_LENGTH 2
 #endif
 
-/* type of linked value */
-typedef struct lvt_ {struct lvt_ *link; link_value_t value;} link_t;
-
-/* type of lcdr value */
+/* type of list value */
 #define LCDR_SIZE_L 4
 #define LCDR_SIZE_U 64
-typedef struct lcdr_ {
-  struct lcdr_ *link;
+typedef struct list_ {
+  struct list_ *link;
   unsigned int va_used; // va[0] .. va[va_used-1] are used
   unsigned int va_size; // LCDR_SIZE_L .. LCDR_SIZE_U
-  link_value_t va[1];   // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
-} lcdr_t;
+  union {
+    value_t value[1];    // variable size, LCDR_SIZE_L .. LCDR_SIZE_U	    
+    link_value_t va[1];  // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
+  } u;
+} list_t;
 
 /* hash entry, with unique key */
 
@@ -48,10 +48,9 @@ struct item {
   union {
     value_t      value;
     link_value_t cstr;
-    link_t       *link;
     struct al_skiplist_t *skiplist;
     void         *ptr;
-    lcdr_t	 *lcdr;
+    list_t	 *list;
   } u;
 };
 
@@ -63,16 +62,15 @@ struct item {
 
 #define HASH_FLAG_SCALAR	HASH_TYPE_SCALAR
 #define HASH_FLAG_STRING	HASH_TYPE_STRING
-#define HASH_FLAG_LINKED	HASH_TYPE_LINKED
 #define HASH_FLAG_PQ		HASH_TYPE_PQ
 #define HASH_FLAG_POINTER	HASH_TYPE_POINTER
-#define HASH_FLAG_LCDR		HASH_TYPE_LCDR
-#define HASH_TYPE_MASK		(HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_LINKED|HASH_FLAG_PQ|HASH_TYPE_POINTER|HASH_FLAG_LCDR)
-#define HASH_FLAG_PARAM_SET	(HASH_TYPE_LCDR<<1)
+#define HASH_FLAG_LIST		HASH_TYPE_LIST
+#define HASH_TYPE_MASK		(HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_PQ|HASH_TYPE_POINTER|HASH_TYPE_LIST)
+#define HASH_FLAG_PARAM_SET	(HASH_TYPE_POINTER<<1)
 
 #define ITER_FLAG_AE		0x10000   // call end() at end of iteration
 #define ITER_FLAG_VIRTUAL	0x80000   // virtual hash_iter createed
-                                          //  al_linked_hash_get() or al_pqueue_hash_get()
+                                          //  al_list_hash_get() or al_pqueue_hash_get()
 
 #define hash_size(n) (1<<(n))
 
@@ -121,26 +119,18 @@ struct al_hash_iter_t {
   struct item **sorted;	   // for sort by key
   struct al_hash_iter_t *chain;
   unsigned int n_value_iter;    // number of value iterators pointed me
-  unsigned int hi_flag;	        // lower 2byte are copy of ht->flag
+  unsigned int hi_flag;	        // lower 2byte are copy of ht->h_flag
 };
 
-struct al_linked_value_iter_t {
-  link_t *li_link, *li_current;
-  link_value_t *li_sorted;
-  struct al_hash_iter_t *li_pitr; // parent
-  unsigned int li_max_index;
-  unsigned int li_index;     // index of sorted[]
-  int li_flag; // AL_ITER_AE bit only
-};
-
-struct al_lcdr_value_iter_t {
-  lcdr_t *cd_link, *cd_current;
-  link_value_t *cd_sorted;
-  struct al_hash_iter_t *cd_pitr; // parent
-  unsigned int cd_max_index;
-  unsigned int cd_index;     // index of sorted[]
-  unsigned int cd_cindex;    // index of current->va[]
-  int cd_flag; // AL_ITER_AE bit only
+struct al_list_value_iter_t {
+  list_t *ls_link, *ls_current;
+  value_t *ls_sorted;
+  link_value_t *ls_sorted_str;
+  struct al_hash_iter_t *ls_pitr; // parent
+  unsigned int ls_max_index;
+  unsigned int ls_index;     // index of sorted[]
+  unsigned int ls_cindex;    // index of current->va[]
+  int ls_flag;
 };
 
 struct al_pqueue_value_iter_t {
@@ -364,7 +354,17 @@ init_hash(int bit, struct al_hash_t **htp)
 int
 al_init_hash(int type, int bit, struct al_hash_t **htp)
 {
-  if ((type & ~HASH_TYPE_MASK) != 0 || (type & (type - 1)) != 0) return -7;
+  if ((type & ~HASH_TYPE_MASK) != 0) return -7;
+  if ((type & HASH_TYPE_LIST) != 0) {
+    if ((type & (HASH_TYPE_PQ|HASH_TYPE_POINTER)) != 0 ||
+	(type & (HASH_TYPE_SCALAR|HASH_TYPE_STRING)) == 0 ||
+	(type & (HASH_TYPE_SCALAR|HASH_TYPE_STRING)) == (HASH_TYPE_SCALAR|HASH_TYPE_STRING) ) {
+      return -7;
+    }
+  } else if ((type & (type - 1)) != 0) {
+    return -7;
+  }
+
   int ret = init_hash(bit, htp);
   if (0 <= ret)
     (*htp)->h_flag = type;
@@ -415,24 +415,15 @@ al_get_pointer_hash_pointer(const void *a)
 }
 
 static void
-free_linked_value(link_t *lp)
-{
-  while (lp) {
-    link_t *nextp = lp->link;
-    free((void *)lp->value);
-    free((void *)lp);
-    lp = nextp;
-  }
-}
-
-static void
-free_lcdr_value(lcdr_t *dp)
+free_list_value(int flag, list_t *dp)
 {
   unsigned int i;
   while (dp) {
-    lcdr_t *nextp = dp->link;
-    for (i = dp->va_used; 0 < i;)
-      free((void *)dp->va[--i]);
+    list_t *nextp = dp->link;
+    if (flag & HASH_FLAG_STRING) {
+      for (i = dp->va_used; 0 < i;)
+	free((void *)dp->u.va[--i]);
+    }
     free((void *) dp);
     dp = nextp;
   }
@@ -454,11 +445,9 @@ free_value(struct al_hash_t *ht, struct item *it)
   case HASH_FLAG_PQ:
     al_free_skiplist(it->u.skiplist);
     break;
-  case HASH_FLAG_LINKED:
-    free_linked_value(it->u.link);
-    break;
-  case HASH_FLAG_LCDR:
-    free_lcdr_value(it->u.lcdr);
+  case HASH_FLAG_LIST|HASH_FLAG_SCALAR:
+  case HASH_FLAG_LIST|HASH_FLAG_STRING:
+    free_list_value(ht->h_flag, it->u.list);
     break;
   }
 }
@@ -653,7 +642,7 @@ static int
   int so = flag & HASH_FLAG_SORT_ORD;
 
   if (flag & AL_SORT_VALUE) {		// sort by value part
-    if ((ht->h_flag & (HASH_FLAG_LINKED|HASH_FLAG_PQ|HASH_FLAG_LCDR)) != 0) {
+    if ((ht->h_flag & (HASH_FLAG_PQ|HASH_FLAG_LIST)) != 0) {
       return NULL;
     } else if ((ht->h_flag & HASH_FLAG_POINTER) != 0) {
       return so == AL_SORT_DIC ? ht->sort_p : ht->sort_rev_p; // may be NULL
@@ -769,7 +758,6 @@ al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
   struct al_hash_iter_t *ip = (struct al_hash_iter_t *)
                                calloc(1, sizeof(struct al_hash_iter_t));
   if (!ip) return -2;
-  if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so) return -7;
 
   if (so == AL_SORT_NO)
     ret = iter_nsort(ht, ip);
@@ -957,7 +945,7 @@ del_sorted_iter(struct al_hash_iter_t *iterp)
   return 0;
 }
 
-/* scalar, linked and pqueue ht acceptable */
+/* scalar, list and pqueue ht acceptable */
 int
 item_delete_iter(struct al_hash_iter_t *iterp)
 {
@@ -1028,7 +1016,7 @@ detach_value_iter(struct al_hash_iter_t *iterp)
     --iterp->n_value_iter;
 }
 
-/**** iterator of value of linked hash ***/
+/**** iterator of value of list hash ***/
 
 static int
 v_cmp(const void *a, const void *b)
@@ -1055,237 +1043,88 @@ vn_num_cmp(const void *a, const void *b)
 }
 
 static int
+vv_cmp(const void *a, const void *b)
+{
+  if (*(value_t *)a == *(value_t *)b) return 0;
+  return *(value_t *)a < *(value_t *)b ? -1 : 1;
+}
+
+static int
+vvn_cmp(const void *a, const void *b)
+{
+  if (*(value_t *)a == *(value_t *)b) return 0;
+  return *(value_t *)a > *(value_t *)b ? -1 : 1;
+}
+
+static int
 (*sort_vf(int flag))(const void *, const void *)
 {
   int so = flag & HASH_FLAG_SORT_ORD;
-  if (flag & AL_SORT_NUMERIC) {
+  if (flag & HASH_TYPE_SCALAR) {
+    return so == AL_SORT_DIC ? vv_cmp : vvn_cmp;
+  } else if (flag & AL_SORT_NUMERIC) {
     return so == AL_SORT_DIC ? v_num_cmp : vn_num_cmp;
   } else {
     return so == AL_SORT_DIC ? v_cmp : vn_cmp;
   }
+
 }
 
+/**** iterator of value of list hash ***/
+
 static int
-mk_linked_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
-		    struct al_linked_value_iter_t **v_iterp, int flag)
+mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
+		  struct al_list_value_iter_t **v_iterp, int flag, long topk)
 {
   int so = flag & HASH_FLAG_SORT_ORD;
 
   if (!v_iterp) return 0;
   *v_iterp = NULL;
 
-  struct al_linked_value_iter_t *vip =
-    (struct al_linked_value_iter_t *)calloc(1, sizeof(struct al_linked_value_iter_t));
-  if (!vip) return -2;
-
-  if (so == AL_SORT_NO || !it->u.link->link) { // no sort, or one value entry only
-    vip->li_link = vip->li_current = it->u.link;
-    vip->li_max_index = so ? 1 : 0;
-  } else {
-    unsigned int nvalue = vip->li_max_index;
-    link_t *lp;
-    if (nvalue == 0) { // al_linked_hash_nvalue() set vip->max_index as correct value
-      for (lp = it->u.link; lp; lp = lp->link)
-	nvalue++;	
-    }
-    link_value_t *sarray = (link_value_t *)malloc(nvalue * sizeof(link_value_t *));
-    if (!sarray) {
-      free((void *)vip);
-      return -2;
-    }
-    vip->li_max_index = nvalue;
-    for (nvalue = 0, lp = it->u.link; lp; lp = lp->link)
-      sarray[nvalue++] = lp->value;
-
-    int (*sf)(const void *, const void *) = sort_vf(flag);
-    qsort((void *)sarray, nvalue, sizeof(link_value_t *), sf);
-    vip->li_sorted = sarray;
-  }
-  vip->li_flag = flag & AL_ITER_AE;
-  vip->li_pitr = iterp;
-  attach_value_iter(iterp);
-  *v_iterp = vip;
-
-  return 0;
-}
-
-int al_linked_hash_get(struct al_hash_t *ht, char *key,
-		       struct al_linked_value_iter_t **v_iterp, int flag)
-{
-  int ret = 0;
-  int so = flag & HASH_FLAG_SORT_ORD;
-  if (!ht || !key) return -3;
-  if (!(ht->h_flag & HASH_FLAG_LINKED)) return -6;
-  if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so) return -7;
-
-  unsigned int hv = al_hash_fn_i(key);
-  struct item *it = hash_find(ht, key, hv);
-  if (!it) return -1;
-
-  struct al_hash_iter_t *ip = (struct al_hash_iter_t *)
-                               calloc(1, sizeof(struct al_hash_iter_t));
-  if (!ip) return -2;
-
-  ip->hi_flag = ITER_FLAG_VIRTUAL;
-  ip->ht = ht;
-
-  ret = mk_linked_hash_iter(it, ip, v_iterp, flag);
-  if (ret < 0) {
-    free((void *)ip);
-    return ret;
-  }
-  attach_iter(ht, ip);
-
-  return 0;
-}
-
-int
-al_linked_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-		    struct al_linked_value_iter_t **v_iterp, int flag)
-{
-  int ret = 0;
-  struct item *it;
-  int so = flag & HASH_FLAG_SORT_ORD;
-  if (!iterp || !key) return -3;
-
-  *key = NULL;
-  if (!(iterp->hi_flag & HASH_FLAG_LINKED))
-    ret = -6;
-  else if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so)
-    ret = -7;
-  else
-    ret = advance_iter(iterp, &it);
-
-  if (ret < 0) {
-    check_hash_iter_ae(iterp, ret);
-    return ret;
-  }
-
-  *key = it->key;
-  return mk_linked_hash_iter(it, iterp, v_iterp, flag);
-}
-
-/* advance iterator */
-int
-al_linked_value_iter(struct al_linked_value_iter_t *v_iterp, link_value_t *ret_v)
-{	
-  link_value_t lv = NULL;
-  if (!v_iterp) return -3;
-
-  if (v_iterp->li_sorted) {
-    if (v_iterp->li_index < v_iterp->li_max_index)
-      lv = v_iterp->li_sorted[v_iterp->li_index++];
-  } else {
-    if (v_iterp->li_current) {
-      link_t *rp = v_iterp->li_current;
-      v_iterp->li_current = rp->link;
-      lv = rp->value;
-    }
-  }
-
-  if (lv) {
-    if (ret_v)
-      *ret_v = lv;
-    return 0;
-  }
-
-  if (v_iterp->li_flag & AL_ITER_AE)
-    al_linked_value_iter_end(v_iterp);
-
-  return -1;
-}
-
-int
-al_linked_value_iter_end(struct al_linked_value_iter_t *vip)
-{
-  if (!vip) return -3;
-  detach_value_iter(vip->li_pitr);
-  if (vip->li_pitr->hi_flag & ITER_FLAG_VIRTUAL) {
-    detach_iter(vip->li_pitr->ht, vip->li_pitr);
-    free((void *)vip->li_pitr);
-  }
-  if (vip->li_sorted)
-    free((void *)vip->li_sorted);
-  free((void *)vip);
-  return 0;
-}
-
-int
-al_linked_hash_nvalue(struct al_linked_value_iter_t *vip)
-{
-  if (!vip) return -3;
-  if (vip->li_max_index)
-    return vip->li_max_index;
-  unsigned int nvalue = 0;
-  link_t *lp;
-  for (lp = vip->li_link; lp; lp = lp->link)
-    nvalue++;
-  vip->li_max_index = nvalue;
-  return nvalue;
-}
-
-int
-al_linked_hash_rewind_value(struct al_linked_value_iter_t *vip)
-{
-  if (!vip) return -3;
-  if (!vip->li_sorted || vip->li_max_index == 1)
-    vip->li_current = vip->li_link;
-  else
-    vip->li_index = 0;
-
-  return 0;
-}
-
-int
-al_is_linked_hash(struct al_hash_t *ht)
-{
-  if (!ht) return -3;
-  return ht->h_flag & HASH_FLAG_LINKED ? 0 : -1;
-}
-
-int
-al_is_linked_iter(struct al_hash_iter_t *iterp)
-{
-  if (!iterp) return -3;
-  return iterp->hi_flag & HASH_FLAG_LINKED ? 0 : -1;
-}
-
-/**** iterator of value of lcdr hash ***/
-
-static int
-mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
-		  struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
-{
-  int so = flag & HASH_FLAG_SORT_ORD;
-
-  if (!v_iterp) return 0;
-  *v_iterp = NULL;
-
-  struct al_lcdr_value_iter_t *vip =
-    (struct al_lcdr_value_iter_t *)calloc(1, sizeof(struct al_lcdr_value_iter_t));
+  struct al_list_value_iter_t *vip =
+    (struct al_list_value_iter_t *)calloc(1, sizeof(struct al_list_value_iter_t));
   if (!vip) return -2;
 
   if (so == AL_SORT_NO) {
-    vip->cd_link = vip->cd_current = it->u.lcdr;
+    vip->ls_link = vip->ls_current = it->u.list;
   } else {
-    unsigned int nvalue = vip->cd_max_index;
-    lcdr_t *dp;
-    if (nvalue == 0) { // al_lcdr_hash_nvalue() may set vip->cd_max_index to correct value
-      for (dp = it->u.lcdr; dp; dp = dp->link)
+    link_value_t *sarray = NULL;
+    value_t *svarray = NULL;
+    int i;
+    unsigned int nvalue = vip->ls_max_index;
+    list_t *dp;
+    if (nvalue == 0) { // al_list_hash_nvalue() may set vip->ls_max_index to correct value
+      for (dp = it->u.list; dp; dp = dp->link)
 	nvalue += dp->va_used;
     }
-    link_value_t *sarray = (link_value_t *)malloc(nvalue * sizeof(link_value_t *));
-    if (!sarray) {
-      free((void *)vip);
-      return -2;
-    }
-    vip->cd_max_index = nvalue;
 
-    for (nvalue = 0, dp = it->u.lcdr; dp; dp = dp->link) {
-      unsigned int i;
-      for (i = 0; i < dp->va_used; i++)
-	sarray[nvalue++] = dp->va[i];
+    if (iterp->hi_flag & HASH_FLAG_STRING) {
+      sarray = (link_value_t *)malloc(nvalue * sizeof(link_value_t *));
+      if (!sarray) {
+	free((void *)vip);
+	return -2;
+      }
+      for (i = 0, dp = it->u.list; dp; dp = dp->link) {
+	int j;
+	for (j = 0; j < dp->va_used; j++)
+	  sarray[i++] = dp->u.va[j];
+      }
+      vip->ls_sorted_str = sarray;
+    } else {
+      svarray = (value_t *)malloc(nvalue * sizeof(value_t *));
+      if (!svarray) {
+	free((void *)vip);
+	return -2;
+      }
+      for (i = 0, dp = it->u.list; dp; dp = dp->link) {
+	int j;
+	for (j = 0; j < dp->va_used; j++)
+	  svarray[i++] = dp->u.value[j];
+      }
+      vip->ls_sorted = svarray;
     }
+
+    vip->ls_max_index = nvalue;
 
     int (*sf)(const void *, const void *) = sort_vf(flag);
 
@@ -1293,37 +1132,44 @@ mk_lcdr_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
       topk = nvalue / 2;
 
     if (0 < topk && topk < nvalue) {
-      al_ffk((void *)sarray, nvalue, sf, topk);
-      sarray = (link_value_t *)realloc(sarray, sizeof(link_value_t *) * topk);
+      if (iterp->hi_flag & HASH_FLAG_STRING) {
+	al_ffk((void *)vip->ls_sorted_str, nvalue, sf, topk);
+	vip->ls_sorted_str = (link_value_t *)realloc(vip->ls_sorted_str, sizeof(link_value_t *) * topk);
+      } else {
+	al_ffk((void *)vip->ls_sorted, nvalue, sf, topk);
+	vip->ls_sorted = (value_t *)realloc(vip->ls_sorted, sizeof(value_t *) * topk);
+      }
       nvalue = topk;
-      vip->cd_max_index = topk;
+      vip->ls_max_index = topk;
       if (flag & AL_SORT_FFK_REV) {
 	// bit not HASH_FLAG_SORT_ORD part of flag
 	int f = (flag & ~HASH_FLAG_SORT_ORD) | ((~flag) & HASH_FLAG_SORT_ORD);
 	sf = sort_vf(f);	// reverse order
       }
     }
-    if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0)
-      qsort((void *)sarray, nvalue, sizeof(link_value_t *), sf);
-    vip->cd_sorted = sarray;
+    if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0) {
+      if (iterp->hi_flag & HASH_FLAG_STRING)
+	qsort((void *)vip->ls_sorted_str, nvalue, sizeof(link_value_t *), sf);
+      else
+	qsort((void *)vip->ls_sorted, nvalue, sizeof(value_t *), sf);
+    }
   }
 
-  vip->cd_flag = flag & AL_ITER_AE;
-  vip->cd_pitr = iterp;
+  vip->ls_flag = flag & (AL_ITER_AE|HASH_TYPE_MASK);
+  vip->ls_pitr = iterp;
   attach_value_iter(iterp);
   *v_iterp = vip;
 
   return 0;
 }
 
-int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
-			  struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
+int
+al_list_topk_hash_get(struct al_hash_t *ht, char *key,
+		      struct al_list_value_iter_t **v_iterp, int flag, long topk)
 {
   int ret = 0;
-  int so = flag & HASH_FLAG_SORT_ORD;
   if (!ht || !key) return -3;
-  if (!(ht->h_flag & HASH_FLAG_LCDR)) return -6;
-  if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so) return -7;
+  if (!(ht->h_flag & HASH_FLAG_LIST)) return -6;
 
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
@@ -1333,10 +1179,11 @@ int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
                                calloc(1, sizeof(struct al_hash_iter_t));
   if (!ip) return -2;
 
-  ip->hi_flag = ITER_FLAG_VIRTUAL;
+  flag |= (ht->h_flag & HASH_TYPE_MASK);
+  ip->hi_flag = (ht->h_flag & HASH_TYPE_MASK) | ITER_FLAG_VIRTUAL;
   ip->ht = ht;
 
-  ret = mk_lcdr_hash_iter(it, ip, v_iterp, flag, topk);
+  ret = mk_list_hash_iter(it, ip, v_iterp, flag, topk);
   if (ret < 0) {
     free((void *)ip);
     return ret;
@@ -1347,19 +1194,16 @@ int al_lcdr_topk_hash_get(struct al_hash_t *ht, char *key,
 }
 
 int
-al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
-		       struct al_lcdr_value_iter_t **v_iterp, int flag, long topk)
+al_list_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
+		       struct al_list_value_iter_t **v_iterp, int flag, long topk)
 {
   int ret = 0;
   struct item *it;
-  int so = flag & HASH_FLAG_SORT_ORD;
   if (!iterp || !key) return -3;
 
   *key = NULL;
-  if (!(iterp->hi_flag & HASH_FLAG_LCDR))
+  if (!(iterp->hi_flag & HASH_FLAG_LIST))
     ret = -6;
-  else if (so < AL_SORT_NO || AL_SORT_COUNTER_DIC < so)
-    ret = -7;
   else
     ret = advance_iter(iterp, &it);
 
@@ -1369,99 +1213,141 @@ al_lcdr_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
   }
 
   *key = it->key;
-  return mk_lcdr_hash_iter(it, iterp, v_iterp, flag, topk);
+  flag |= (iterp->hi_flag & HASH_TYPE_MASK);
+  return mk_list_hash_iter(it, iterp, v_iterp, flag, topk);
 }
 
 /* advance iterator */
-int
-al_lcdr_value_iter(struct al_lcdr_value_iter_t *v_iterp, link_value_t *ret_v)
-{	
-  link_value_t lv = NULL;
-  if (!v_iterp) return -3;
 
-  if (v_iterp->cd_sorted) {
-    if (v_iterp->cd_index < v_iterp->cd_max_index)
-      lv = v_iterp->cd_sorted[v_iterp->cd_index++];
+int
+al_list_value_iter(struct al_list_value_iter_t *v_iterp, value_t *ret_v)
+{	
+  int ret = -1;
+  value_t lv = 0;
+  if (!v_iterp) return -3;
+  if ((v_iterp->ls_flag & HASH_TYPE_STRING)) return -6;
+
+  if (v_iterp->ls_sorted) {
+    if (v_iterp->ls_index < v_iterp->ls_max_index) {
+      lv = v_iterp->ls_sorted[v_iterp->ls_index++];
+      ret = 0;
+    }
   } else {
-    while (v_iterp->cd_current) {
-      lcdr_t *dp = v_iterp->cd_current;
-      if (v_iterp->cd_cindex < dp->va_used) {
-	lv = dp->va[v_iterp->cd_cindex++];
+    while (v_iterp->ls_current) {
+      list_t *dp = v_iterp->ls_current;
+      if (v_iterp->ls_cindex < dp->va_used) {
+	lv = dp->u.value[v_iterp->ls_cindex++];
+	ret = 0;
 	break;
       }
-      v_iterp->cd_cindex = 0;
-      v_iterp->cd_current = dp->link;
+      v_iterp->ls_cindex = 0;
+      v_iterp->ls_current = dp->link;
     }
   }
 
-  if (lv) {
+  if (ret == 0) {
     if (ret_v)
       *ret_v = lv;
-    return 0;
-  }
+  } else if (v_iterp->ls_flag & AL_ITER_AE)
+    al_list_value_iter_end(v_iterp);
 
-  if (v_iterp->cd_flag & AL_ITER_AE)
-    al_lcdr_value_iter_end(v_iterp);
-
-  return -1;
+  return ret;
 }
 
 int
-al_lcdr_value_iter_end(struct al_lcdr_value_iter_t *vip)
+al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, link_value_t *ret_v)
+{	
+  int ret = -1;
+  link_value_t lv = NULL;
+  if (!v_iterp) return -3;
+  if ((v_iterp->ls_flag & HASH_TYPE_SCALAR)) return -6;
+
+  if (v_iterp->ls_sorted_str) {
+    if (v_iterp->ls_index < v_iterp->ls_max_index) {
+      lv = v_iterp->ls_sorted_str[v_iterp->ls_index++];
+      ret = 0;
+    }
+  } else {
+    while (v_iterp->ls_current) {
+      list_t *dp = v_iterp->ls_current;
+      if (v_iterp->ls_cindex < dp->va_used) {
+	lv = dp->u.va[v_iterp->ls_cindex++];
+	ret = 0;
+	break;
+      }
+      v_iterp->ls_cindex = 0;
+      v_iterp->ls_current = dp->link;
+    }
+  }
+
+  if (ret == 0) {
+    if (ret_v)
+      *ret_v = lv;
+  } else if (v_iterp->ls_flag & AL_ITER_AE)
+    al_list_value_iter_end(v_iterp);
+
+  return ret;
+}
+
+int
+al_list_value_iter_end(struct al_list_value_iter_t *vip)
 {
   if (!vip) return -3;
 
-  detach_value_iter(vip->cd_pitr);
-  if (vip->cd_pitr->hi_flag & ITER_FLAG_VIRTUAL) {
-    detach_iter(vip->cd_pitr->ht, vip->cd_pitr);
-    free((void *)vip->cd_pitr);
+  detach_value_iter(vip->ls_pitr);
+  if (vip->ls_pitr->hi_flag & ITER_FLAG_VIRTUAL) {
+    detach_iter(vip->ls_pitr->ht, vip->ls_pitr);
+    free((void *)vip->ls_pitr);
   }
-  if (vip->cd_sorted)
-    free((void *)vip->cd_sorted);
+  if (vip->ls_sorted_str)
+    free((void *)vip->ls_sorted_str);
+  if (vip->ls_sorted)
+    free((void *)vip->ls_sorted);
+
   free((void *)vip);
 
   return 0;
 }
 
 int
-al_lcdr_hash_nvalue(struct al_lcdr_value_iter_t *vip)
+al_list_hash_nvalue(struct al_list_value_iter_t *vip)
 {
   if (!vip) return -3;
-  if (vip->cd_max_index)
-    return vip->cd_max_index;
+  if (vip->ls_max_index)
+    return vip->ls_max_index;
   unsigned int nvalue = 0;
-  lcdr_t *dp;
-  for (dp = vip->cd_link; dp; dp = dp->link)
+  list_t *dp;
+  for (dp = vip->ls_link; dp; dp = dp->link)
     nvalue += dp->va_used;
-  vip->cd_max_index = nvalue;
+  vip->ls_max_index = nvalue;
   return nvalue;
 }
 
 int
-al_lcdr_hash_rewind_value(struct al_lcdr_value_iter_t *vip)
+al_list_hash_rewind_value(struct al_list_value_iter_t *vip)
 {
   if (!vip) return -3;
-  if (!vip->cd_sorted) {
-    vip->cd_current = vip->cd_link;
-    vip->cd_cindex = 0;
+  if (!vip->ls_sorted_str && !vip->ls_sorted) {
+    vip->ls_current = vip->ls_link;
+    vip->ls_cindex = 0;
   } else {
-    vip->cd_index = 0;
+    vip->ls_index = 0;
   }
   return 0;
 }
 
 int
-al_is_lcdr_hash(struct al_hash_t *ht)
+al_is_list_hash(struct al_hash_t *ht)
 {
   if (!ht) return -3;
-  return ht->h_flag & HASH_FLAG_LCDR ? 0 : -1;
+  return ht->h_flag & HASH_FLAG_LIST ? 0 : -1;
 }
 
 int
-al_is_lcdr_iter(struct al_hash_iter_t *iterp)
+al_is_list_iter(struct al_hash_iter_t *iterp)
 {
   if (!iterp) return -3;
-  return iterp->hi_flag & HASH_FLAG_LCDR ? 0 : -1;
+  return iterp->hi_flag & HASH_FLAG_LIST ? 0 : -1;
 }
 
 /**** iterator of priority queue ***/
@@ -1491,8 +1377,9 @@ mk_pqeueu_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   return 0;
 }
 
-int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
-		       struct al_pqueue_value_iter_t **v_iterp, int flag)
+int
+al_pqueue_hash_get(struct al_hash_t *ht, char *key,
+		   struct al_pqueue_value_iter_t **v_iterp, int flag)
 {
   int ret = 0;
   if (!ht || !key) return -3;
@@ -1521,8 +1408,9 @@ int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
   return 0;
 }
 
-int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
-			struct al_pqueue_value_iter_t **v_iterp, int flag)
+int
+al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
+		    struct al_pqueue_value_iter_t **v_iterp, int flag)
 {
   int ret = 0;
   struct item *it;
@@ -1548,7 +1436,7 @@ int al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 
 int
 al_pqueue_value_iter(struct al_pqueue_value_iter_t *vip,
-		     link_value_t *keyp, value_t *ret_count)
+		     link_value_t *keyp, pq_value_t *ret_count)
 {	
   if (!vip) return -3;
   int ret = al_sl_iter(vip->sl_iter, keyp, ret_count);
@@ -1610,7 +1498,7 @@ al_is_pqueue_iter(struct al_hash_iter_t *iterp)
 
 /************************/
 
-/* either scalar and linked ht acceptable */
+/* either scalar and list ht acceptable */
 
 int
 item_key(struct al_hash_t *ht, char *key)
@@ -1708,7 +1596,9 @@ item_set_str(struct al_hash_t *ht, char *key, link_value_t v)
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
-  link_value_t lv = strdup(v);
+  link_value_t lv = NULL;
+  if (v)
+    lv = strdup(v);
   if (!lv) return -2;
 
   if (it) {
@@ -1726,7 +1616,7 @@ int
 item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v)
 {
   int ret = 0;
-  if (!ht || !key) return -3;
+  if (!ht || !key || !v) return -3;
   if (!(ht->h_flag & HASH_FLAG_POINTER)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
@@ -1801,7 +1691,9 @@ item_replace_str(struct al_hash_t *ht, char *key, link_value_t v)
   struct item *it = hash_find(ht, key, hv);
 
   if (it) {
-    link_value_t lv = strdup(v);
+    link_value_t lv = NULL;
+    if (v)
+      lv = strdup(v);
     if (!lv) return -2;
     free((void *)it->u.cstr);
     it->u.cstr = lv;
@@ -1810,7 +1702,7 @@ item_replace_str(struct al_hash_t *ht, char *key, link_value_t v)
   return -1;
 }
 
-/* either scalar and linked ht acceptable */
+/* either scalar and list ht acceptable */
 int
 item_delete(struct al_hash_t *ht, char *key)
 {
@@ -1858,7 +1750,7 @@ item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
 #endif
 
 int
-item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
+item_inc(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1873,7 +1765,7 @@ item_inc(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
 }
 
 int
-item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
+item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1881,10 +1773,10 @@ item_inc_init(struct al_hash_t *ht, char *key, long off, value_t *ret_v)
   struct item *it = hash_find(ht, key, hv);
   if (!it) {
 #ifdef INC_INIT_RETURN_ONE
-    int ret = hash_v_insert(ht, hv, key, (value_t)off);
+    int ret = hash_v_insert(ht, hv, key, off);
     return ret == 0 ? 1 : ret;
 #else
-    return hash_v_insert(ht, hv, key, (value_t)off);
+    return hash_v_insert(ht, hv, key, off);
 #endif
   }
 
@@ -1932,33 +1824,48 @@ add_value_to_pq(struct al_hash_t *ht, char *key, link_value_t v)
 }
 
 static int
-add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
+add_value_to_list(struct al_hash_t *ht, char *key, value_t v, link_value_t lv)
 {
-  link_value_t lv = strdup(v);
-  if (!lv) return -2;
+  if (ht->h_flag & HASH_FLAG_STRING) {
+    if (lv) {
+      lv = strdup(lv);
+      if (!lv) return -2;
+    }
+  }
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
-  lcdr_t *ndp = NULL;
+  list_t *ndp = NULL;
 
   int ret = -2;
   if (it) {
-    lcdr_t *dp = it->u.lcdr;
+    list_t *dp = it->u.list;
     if (dp->va_size <= dp->va_used) {
       int sz = dp->va_size;
       if (sz < LCDR_SIZE_U)
 	sz <<= 1;
-      ndp = (lcdr_t *)calloc(1, sizeof(lcdr_t) + (sz - 1) * sizeof(link_value_t));
+      if (ht->h_flag & HASH_FLAG_STRING)
+	ndp = (list_t *)calloc(1, sizeof(list_t) + (sz - 1) * sizeof(link_value_t));
+      else
+	ndp = (list_t *)calloc(1, sizeof(list_t) + (sz - 1) * sizeof(value_t));	
       if (!ndp) goto free_lv;
 
       ndp->va_size = sz;
       ndp->link = dp;
-      it->u.lcdr = ndp;
+      it->u.list = ndp;
       dp = ndp;
     }
-    dp->va[dp->va_used++] = lv;
+
+    if (ht->h_flag & HASH_FLAG_STRING)
+      dp->u.va[dp->va_used++] = lv;
+    else
+      dp->u.value[dp->va_used++] = v;
     return 0;
   }
-  ndp = (lcdr_t *)calloc(1, sizeof(lcdr_t) + (LCDR_SIZE_L - 1) * sizeof(link_value_t));
+
+  if (ht->h_flag & HASH_FLAG_STRING)
+    ndp = (list_t *)calloc(1, sizeof(list_t) + (LCDR_SIZE_L - 1) * sizeof(link_value_t));
+  else
+    ndp = (list_t *)calloc(1, sizeof(list_t) + (LCDR_SIZE_L - 1) * sizeof(value_t));
   if (!ndp) goto free_lv;
 
   it = (struct item *)malloc(sizeof(struct item));
@@ -1968,8 +1875,13 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
   if (!it->key) goto free_it;
 
   ndp->va_size = LCDR_SIZE_L;
-  ndp->va[ndp->va_used++] = lv;
-  it->u.lcdr = ndp;
+
+  if (ht->h_flag & HASH_FLAG_STRING)
+    ndp->u.va[ndp->va_used++] = lv;
+  else
+    ndp->u.value[ndp->va_used++] = v;
+
+  it->u.list = ndp;
 
   ret = hash_insert(ht, hv, key, it);
   if (ret < 0) goto free_key;
@@ -1990,61 +1902,20 @@ add_value_to_lcdr(struct al_hash_t *ht, char *key, link_value_t v)
 }
 
 int
-item_add_value(struct al_hash_t *ht, char *key, link_value_t v)
+item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, link_value_t lv, int flag)
 {
-  int ret = 0;
   if (!ht || !key) return -3;
 
-  if (ht->h_flag & HASH_FLAG_PQ)
-    return add_value_to_pq(ht, key, v);
-
-  if (ht->h_flag & HASH_FLAG_LCDR)
-    return add_value_to_lcdr(ht, key, v);
-
-  if (!(ht->h_flag & HASH_FLAG_LINKED)) return -6;
-
-  link_t *lp = (link_t *)malloc(sizeof(link_t));
-  if (!lp) return -2;
-
-  lp->value = strdup(v);
-  if (!lp->value) {
-    free((void *)lp);
-    return ret;
+  if (ht->h_flag & HASH_FLAG_PQ) {
+    if (flag == HASH_FLAG_SCALAR) return -6;
+    return add_value_to_pq(ht, key, lv);
   }
 
-  unsigned int hv = al_hash_fn_i(key);
-  struct item *it = hash_find(ht, key, hv);
-  if (it) { /* found, add link */
-    lp->link = it->u.link;
-    it->u.link = lp;
-    return 0;
+  if (ht->h_flag & HASH_FLAG_LIST) {
+    if ((ht->h_flag & (HASH_FLAG_SCALAR|HASH_FLAG_STRING)) != flag) return -6;
+    return add_value_to_list(ht, key, v, lv);
   }
-
-  ret = -2;
-  it = (struct item *)malloc(sizeof(struct item));
-  if (!it) goto free_lp;
-
-  it->key = strdup(key);
-  if (!it->key) goto free;
-
-  lp->link = NULL;
-  it->u.link = lp;
-
-  ret = hash_insert(ht, hv, key, it);
-  if (ret < 0) goto free_key;
-
-  return 0;
-
-  /* error return */
- free_key:
-  free((void *)it->key);
- free:
-  free((void *)it);
- free_lp:
-  free((void *)lp->value);
-  free((void *)lp);
-
-  return ret;
+  return -6;
 }
 
 /***/
@@ -2423,7 +2294,7 @@ node_set(struct al_skiplist_t *sl, pq_key_t key, struct slnode *update[], struct
 }
 
 int
-sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v)
+sl_set(struct al_skiplist_t *sl, pq_key_t key, pq_value_t v)
 {
   int ret = 0;
   struct slnode *update[SL_MAX_LEVEL];
@@ -2440,7 +2311,7 @@ sl_set(struct al_skiplist_t *sl, pq_key_t key, value_t v)
 
 #ifdef SL_LAST_KEY
 int
-sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
+sl_set_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t v, unsigned long max_n)
 {
   int ret = 0;
   if (!sl || !key) return -3;
@@ -2461,7 +2332,7 @@ sl_set_n(struct al_skiplist_t *sl, pq_key_t key, value_t v, unsigned long max_n)
 #endif
 
 int
-sl_get(struct al_skiplist_t *sl, pq_key_t key, value_t *ret_v)
+sl_get(struct al_skiplist_t *sl, pq_key_t key, pq_value_t *ret_v)
 {
   if (!sl || !key) return -3;
 
@@ -2482,7 +2353,7 @@ sl_key(struct al_skiplist_t *sl, pq_key_t key)
 }
 
 int
-sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
+sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t *ret_v)
 {
   struct slnode *update[SL_MAX_LEVEL];
   struct slnode *np;
@@ -2492,7 +2363,7 @@ sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
   if (!(np = find_node(sl, key, update))) {
     ret = node_set(sl, key, update, &np);
     if (ret < 0) return ret;
-    np->u.value = (value_t)off;
+    np->u.value = off;
 #ifdef INC_INIT_RETURN_ONE
     return 1;
 #endif
@@ -2505,7 +2376,7 @@ sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v)
 }
 #ifdef SL_LAST_KEY
 int
-sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, long off, value_t *ret_v, unsigned long max_n)
+sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t *ret_v, unsigned long max_n)
 {
   int ret = 0;
   if (!sl || !key) return -3;
@@ -2554,7 +2425,7 @@ al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp, int
 }
 
 int
-al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, value_t *ret_v)
+al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v)
 {
   int ret = -3;
   if (iterp)
@@ -2616,9 +2487,8 @@ al_ffk(void *base, long nel,
   long right = nel - 1;
 
   while (left < right) {
-    long pvi = (left + right) / 2;
+    long pvi = right;
     void *rv = baseoff(base, pvi);
-    ffk_swap(base, pvi, right);
 
     long ll = left - 1;
     long rr = right;
@@ -2632,9 +2502,9 @@ al_ffk(void *base, long nel,
 
     if (ll == topn) break;
 
-    if (topn < ll)
+    if (topn <= ll)
       right = ll - 1;
-    else
+    if (topn >= ll)
       left  = ll + 1;
   }
   // qsort(base, topn, sizeof(void *), compar);
