@@ -10,9 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define AL_HASH_O
 #include "hash.h"
-#undef AL_HASH_O
 
 /*
  * WARN 0: NO
@@ -122,10 +120,22 @@ struct al_hash_iter_t {
   unsigned int hi_flag;	        // lower 2byte are copy of ht->h_flag
 };
 
+#if __WORDSIZE == 32
+/* access sorted list values indirect */
+#define ASTS *
+#define AMPS &
+#else
+#define ASTS
+#define AMPS
+#endif
+
 struct al_list_value_iter_t {
   list_t *ls_link, *ls_current;
-  value_t *ls_sorted;
-  link_value_t *ls_sorted_str;
+  union {
+    value_t ASTS *ls_sorted;
+    link_value_t ASTS *ls_sorted_str;
+    void **vptr;
+  } u;
   struct al_hash_iter_t *ls_pitr; // parent
   unsigned int ls_max_index;
   unsigned int ls_index;     // index of sorted[]
@@ -1021,39 +1031,39 @@ detach_value_iter(struct al_hash_iter_t *iterp)
 static int
 v_cmp(const void *a, const void *b)
 {
-  return strcmp(*(link_value_t *)a, *(link_value_t *)b);
+  return strcmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
 }
 
 static int
 vn_cmp(const void *a, const void *b)
 {
-  return -strcmp(*(link_value_t *)a, *(link_value_t *)b);
+  return -strcmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
 }
 
 static int
 v_num_cmp(const void *a, const void *b)
 {
-  return str_num_cmp(*(link_value_t *)a, *(link_value_t *)b);
+  return str_num_cmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
 }
 
 static int
 vn_num_cmp(const void *a, const void *b)
 {
-  return -str_num_cmp(*(link_value_t *)a, *(link_value_t *)b);
+  return -str_num_cmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
 }
 
 static int
 vv_cmp(const void *a, const void *b)
 {
-  if (*(value_t *)a == *(value_t *)b) return 0;
-  return *(value_t *)a < *(value_t *)b ? -1 : 1;
+  if (ASTS *(value_t ASTS *)a == ASTS *(value_t ASTS *)b) return 0;
+  return ASTS *(value_t ASTS *)a < ASTS *(value_t ASTS *)b ? -1 : 1;
 }
 
 static int
 vvn_cmp(const void *a, const void *b)
 {
-  if (*(value_t *)a == *(value_t *)b) return 0;
-  return *(value_t *)a > *(value_t *)b ? -1 : 1;
+  if (ASTS *(value_t ASTS *)a == ASTS *(value_t ASTS *)b) return 0;
+  return ASTS *(value_t ASTS *)a > ASTS *(value_t ASTS *)b ? -1 : 1;
 }
 
 static int
@@ -1088,8 +1098,8 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   if (so == AL_SORT_NO) {
     vip->ls_link = vip->ls_current = it->u.list;
   } else {
-    link_value_t *sarray = NULL;
-    value_t *svarray = NULL;
+    link_value_t ASTS *sarray = NULL;
+    value_t ASTS *svarray = NULL;
     int i;
     unsigned int nvalue = vip->ls_max_index;
     list_t *dp;
@@ -1099,7 +1109,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     }
 
     if (iterp->hi_flag & HASH_FLAG_STRING) {
-      sarray = (link_value_t *)malloc(nvalue * sizeof(link_value_t *));
+      sarray = (link_value_t ASTS *)malloc(nvalue * sizeof(link_value_t ASTS));
       if (!sarray) {
 	free((void *)vip);
 	return -2;
@@ -1107,11 +1117,11 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
       for (i = 0, dp = it->u.list; dp; dp = dp->link) {
 	int j;
 	for (j = 0; j < dp->va_used; j++)
-	  sarray[i++] = dp->u.va[j];
+	  sarray[i++] = AMPS dp->u.va[j];
       }
-      vip->ls_sorted_str = sarray;
+      vip->u.ls_sorted_str = sarray;
     } else {
-      svarray = (value_t *)malloc(nvalue * sizeof(value_t *));
+      svarray = (value_t ASTS *)malloc(nvalue * sizeof(value_t ASTS));
       if (!svarray) {
 	free((void *)vip);
 	return -2;
@@ -1119,9 +1129,9 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
       for (i = 0, dp = it->u.list; dp; dp = dp->link) {
 	int j;
 	for (j = 0; j < dp->va_used; j++)
-	  svarray[i++] = dp->u.value[j];
+	  svarray[i++] = AMPS dp->u.value[j];
       }
-      vip->ls_sorted = svarray;
+      vip->u.ls_sorted = svarray;
     }
 
     vip->ls_max_index = nvalue;
@@ -1133,11 +1143,11 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 
     if (0 < topk && topk < nvalue) {
       if (iterp->hi_flag & HASH_FLAG_STRING) {
-	al_ffk((void *)vip->ls_sorted_str, nvalue, sf, topk);
-	vip->ls_sorted_str = (link_value_t *)realloc(vip->ls_sorted_str, sizeof(link_value_t *) * topk);
+	al_ffk((void *)vip->u.ls_sorted_str, nvalue, sf, topk);
+	vip->u.ls_sorted_str = (link_value_t ASTS *)realloc(vip->u.ls_sorted_str, sizeof(link_value_t ASTS) * topk);
       } else {
-	al_ffk((void *)vip->ls_sorted, nvalue, sf, topk);
-	vip->ls_sorted = (value_t *)realloc(vip->ls_sorted, sizeof(value_t *) * topk);
+	al_ffk((void *)vip->u.ls_sorted, nvalue, sf, topk);
+	vip->u.ls_sorted = (value_t ASTS *)realloc(vip->u.ls_sorted, sizeof(value_t ASTS) * topk);
       }
       nvalue = topk;
       vip->ls_max_index = topk;
@@ -1149,9 +1159,9 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     }
     if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0) {
       if (iterp->hi_flag & HASH_FLAG_STRING)
-	qsort((void *)vip->ls_sorted_str, nvalue, sizeof(link_value_t *), sf);
+	qsort((void *)vip->u.ls_sorted_str, nvalue, sizeof(link_value_t *), sf);
       else
-	qsort((void *)vip->ls_sorted, nvalue, sizeof(value_t *), sf);
+	qsort((void *)vip->u.ls_sorted, nvalue, sizeof(value_t *), sf);
     }
   }
 
@@ -1227,9 +1237,9 @@ al_list_value_iter(struct al_list_value_iter_t *v_iterp, value_t *ret_v)
   if (!v_iterp) return -3;
   if ((v_iterp->ls_flag & HASH_TYPE_STRING)) return -6;
 
-  if (v_iterp->ls_sorted) {
+  if (v_iterp->u.ls_sorted) {
     if (v_iterp->ls_index < v_iterp->ls_max_index) {
-      lv = v_iterp->ls_sorted[v_iterp->ls_index++];
+      lv = ASTS v_iterp->u.ls_sorted[v_iterp->ls_index++];
       ret = 0;
     }
   } else {
@@ -1262,9 +1272,9 @@ al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, link_value_t *ret_v
   if (!v_iterp) return -3;
   if ((v_iterp->ls_flag & HASH_TYPE_SCALAR)) return -6;
 
-  if (v_iterp->ls_sorted_str) {
+  if (v_iterp->u.ls_sorted_str) {
     if (v_iterp->ls_index < v_iterp->ls_max_index) {
-      lv = v_iterp->ls_sorted_str[v_iterp->ls_index++];
+      lv = ASTS v_iterp->u.ls_sorted_str[v_iterp->ls_index++];
       ret = 0;
     }
   } else {
@@ -1299,10 +1309,8 @@ al_list_value_iter_end(struct al_list_value_iter_t *vip)
     detach_iter(vip->ls_pitr->ht, vip->ls_pitr);
     free((void *)vip->ls_pitr);
   }
-  if (vip->ls_sorted_str)
-    free((void *)vip->ls_sorted_str);
-  if (vip->ls_sorted)
-    free((void *)vip->ls_sorted);
+  if (vip->u.vptr)
+    free((void *)vip->u.ls_sorted_str);
 
   free((void *)vip);
 
@@ -1327,7 +1335,7 @@ int
 al_list_hash_rewind_value(struct al_list_value_iter_t *vip)
 {
   if (!vip) return -3;
-  if (!vip->ls_sorted_str && !vip->ls_sorted) {
+  if (!vip->u.vptr) {
     vip->ls_current = vip->ls_link;
     vip->ls_cindex = 0;
   } else {
@@ -2468,7 +2476,22 @@ al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
   return 0;
 }
 
-#define baseoff(base, index) ((base) + (sizeof(void *) * index))
+#define baseoff(base, index) ((base) + sizeof(void *) * (index))
+
+inline long
+med3(void *base, long x, long y, long z, int (*compar)(const void *, const void *))
+{
+  void *yp = baseoff(base, y);
+  void *zp = baseoff(base, z);
+  if ((*compar)(baseoff(base, x), yp) < 0) {
+    if ((*compar)(yp, zp) < 0) return y;
+    if ((*compar)(zp, baseoff(base, x)) < 0) return x;
+  } else {
+    if ((*compar)(zp, yp) < 0) return y;
+    if ((*compar)(baseoff(base, x), zp) < 0) return x;
+  }
+  return z;
+}
 
 inline static void
 ffk_swap(void *a, unsigned long x, unsigned long y)
@@ -2487,14 +2510,28 @@ al_ffk(void *base, long nel,
   long right = nel - 1;
 
   while (left < right) {
-    long pvi = right;
-    void *rv = baseoff(base, pvi);
+    long w = right - left;
 
+    if (7 < w) {
+      long lt  = left;
+      long mid = left + w / 2;
+      long rt  = right;
+      if (40 < w) {
+	long d = w / 8;
+	lt  = med3(base, lt, lt + d, lt + 2 * d, compar);
+	mid = med3(base, mid - d, mid, mid + d, compar);
+	rt  = med3(base, rt - 2 * d, rt - d, rt, compar);
+      }
+      long pvi = med3(base, lt, mid, rt, compar);
+      ffk_swap(base, pvi, right);
+    }
+
+    void *rv = baseoff(base, right);
     long ll = left - 1;
     long rr = right;
     for (;;) {
       while ((*compar)(baseoff(base, ++ll), rv) < 0) ;
-      while ((*compar)(baseoff(base, --rr), rv) > 0) ;
+      while (0 < rr && (*compar)(baseoff(base, --rr), rv) > 0) ;
       if (ll >= rr) break;
       ffk_swap(base, ll, rr);
     }
@@ -2502,10 +2539,8 @@ al_ffk(void *base, long nel,
 
     if (ll == topn) break;
 
-    if (topn <= ll)
-      right = ll - 1;
-    if (topn >= ll)
-      left  = ll + 1;
+    if (topn <= ll) right = ll - 1;
+    if (topn >= ll) left  = ll + 1;
   }
   // qsort(base, topn, sizeof(void *), compar);
 }
