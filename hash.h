@@ -526,7 +526,7 @@ int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 /* find first key */
 /* qsort like interface, element size is sizeof(void *) */
 void
-al_ffk(void *base, long nel,
+al_ffk(void *base, long nel, unsigned long esize,
        int (*compar)(const void *, const void *),
        long topk);
 

@@ -120,20 +120,11 @@ struct al_hash_iter_t {
   unsigned int hi_flag;	        // lower 2byte are copy of ht->h_flag
 };
 
-#if __WORDSIZE == 32
-/* access sorted list values indirect */
-#define ASTS *
-#define AMPS &
-#else
-#define ASTS
-#define AMPS
-#endif
-
 struct al_list_value_iter_t {
   list_t *ls_link, *ls_current;
   union {
-    value_t ASTS *ls_sorted;
-    link_value_t ASTS *ls_sorted_str;
+    value_t *ls_sorted;
+    link_value_t *ls_sorted_str;
     void **vptr;
   } u;
   struct al_hash_iter_t *ls_pitr; // parent
@@ -209,7 +200,7 @@ moving(struct al_hash_t *ht)
     }
     ht->hash_table_old[ht->rehashing_front] = NULL;
     ht->rehashing_front++;
-    if (hash_size(ht->hash_bit-1) <= ht->rehashing_front) {
+    if (hash_size(ht->hash_bit - 1) <= ht->rehashing_front) {
       free((void *)ht->hash_table_old);
       ht->rehashing_front = 0;
       ht->hash_table_old = NULL;
@@ -710,7 +701,7 @@ iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, long topk)
     topk = sidx / 2;
 
   if (0 < topk && topk < sidx) {
-    al_ffk((void *)it_array, sidx, sf, topk);
+    al_ffk((void *)it_array, sidx, sizeof(struct item *), sf, topk);
     it_array = (struct item **)realloc(it_array, sizeof(struct item *) * topk);
     sidx = topk;
     if (flag & AL_SORT_FFK_REV) {
@@ -1031,39 +1022,39 @@ detach_value_iter(struct al_hash_iter_t *iterp)
 static int
 v_cmp(const void *a, const void *b)
 {
-  return strcmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
+  return strcmp(*(link_value_t *)a, *(link_value_t *)b);
 }
 
 static int
 vn_cmp(const void *a, const void *b)
 {
-  return -strcmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
+  return -strcmp(*(link_value_t *)a, *(link_value_t *)b);
 }
 
 static int
 v_num_cmp(const void *a, const void *b)
 {
-  return str_num_cmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
+  return str_num_cmp(*(link_value_t *)a, *(link_value_t *)b);
 }
 
 static int
 vn_num_cmp(const void *a, const void *b)
 {
-  return -str_num_cmp(ASTS *(link_value_t ASTS *)a, ASTS *(link_value_t ASTS *)b);
+  return -str_num_cmp(*(link_value_t *)a, *(link_value_t *)b);
 }
 
 static int
 vv_cmp(const void *a, const void *b)
 {
-  if (ASTS *(value_t ASTS *)a == ASTS *(value_t ASTS *)b) return 0;
-  return ASTS *(value_t ASTS *)a < ASTS *(value_t ASTS *)b ? -1 : 1;
+  if (*(value_t *)a == *(value_t *)b) return 0;
+  return *(value_t *)a < *(value_t *)b ? -1 : 1;
 }
 
 static int
 vvn_cmp(const void *a, const void *b)
 {
-  if (ASTS *(value_t ASTS *)a == ASTS *(value_t ASTS *)b) return 0;
-  return ASTS *(value_t ASTS *)a > ASTS *(value_t ASTS *)b ? -1 : 1;
+  if (*(value_t *)a == *(value_t *)b) return 0;
+  return *(value_t *)a > *(value_t *)b ? -1 : 1;
 }
 
 static int
@@ -1098,8 +1089,8 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   if (so == AL_SORT_NO) {
     vip->ls_link = vip->ls_current = it->u.list;
   } else {
-    link_value_t ASTS *sarray = NULL;
-    value_t ASTS *svarray = NULL;
+    link_value_t *sarray = NULL;
+    value_t *svarray = NULL;
     int i;
     unsigned int nvalue = vip->ls_max_index;
     list_t *dp;
@@ -1109,7 +1100,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     }
 
     if (iterp->hi_flag & HASH_FLAG_STRING) {
-      sarray = (link_value_t ASTS *)malloc(nvalue * sizeof(link_value_t ASTS));
+      sarray = (link_value_t *)malloc(nvalue * sizeof(link_value_t));
       if (!sarray) {
 	free((void *)vip);
 	return -2;
@@ -1117,11 +1108,11 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
       for (i = 0, dp = it->u.list; dp; dp = dp->link) {
 	int j;
 	for (j = 0; j < dp->va_used; j++)
-	  sarray[i++] = AMPS dp->u.va[j];
+	  sarray[i++] = dp->u.va[j];
       }
       vip->u.ls_sorted_str = sarray;
     } else {
-      svarray = (value_t ASTS *)malloc(nvalue * sizeof(value_t ASTS));
+      svarray = (value_t *)malloc(nvalue * sizeof(value_t));
       if (!svarray) {
 	free((void *)vip);
 	return -2;
@@ -1129,7 +1120,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
       for (i = 0, dp = it->u.list; dp; dp = dp->link) {
 	int j;
 	for (j = 0; j < dp->va_used; j++)
-	  svarray[i++] = AMPS dp->u.value[j];
+	  svarray[i++] = dp->u.value[j];
       }
       vip->u.ls_sorted = svarray;
     }
@@ -1143,11 +1134,11 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 
     if (0 < topk && topk < nvalue) {
       if (iterp->hi_flag & HASH_FLAG_STRING) {
-	al_ffk((void *)vip->u.ls_sorted_str, nvalue, sf, topk);
-	vip->u.ls_sorted_str = (link_value_t ASTS *)realloc(vip->u.ls_sorted_str, sizeof(link_value_t ASTS) * topk);
+	al_ffk((void *)vip->u.ls_sorted_str, nvalue, sizeof(link_value_t), sf, topk);
+	vip->u.ls_sorted_str = (link_value_t *)realloc(vip->u.ls_sorted_str, sizeof(link_value_t) * topk);
       } else {
-	al_ffk((void *)vip->u.ls_sorted, nvalue, sf, topk);
-	vip->u.ls_sorted = (value_t ASTS *)realloc(vip->u.ls_sorted, sizeof(value_t ASTS) * topk);
+	al_ffk((void *)vip->u.ls_sorted, nvalue, sizeof(value_t), sf, topk);
+	vip->u.ls_sorted = (value_t *)realloc(vip->u.ls_sorted, sizeof(value_t) * topk);
       }
       nvalue = topk;
       vip->ls_max_index = topk;
@@ -1159,9 +1150,9 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     }
     if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0) {
       if (iterp->hi_flag & HASH_FLAG_STRING)
-	qsort((void *)vip->u.ls_sorted_str, nvalue, sizeof(link_value_t *), sf);
+	qsort((void *)vip->u.ls_sorted_str, nvalue, sizeof(link_value_t), sf);
       else
-	qsort((void *)vip->u.ls_sorted, nvalue, sizeof(value_t *), sf);
+	qsort((void *)vip->u.ls_sorted, nvalue, sizeof(value_t), sf);
     }
   }
 
@@ -1239,7 +1230,7 @@ al_list_value_iter(struct al_list_value_iter_t *v_iterp, value_t *ret_v)
 
   if (v_iterp->u.ls_sorted) {
     if (v_iterp->ls_index < v_iterp->ls_max_index) {
-      lv = ASTS v_iterp->u.ls_sorted[v_iterp->ls_index++];
+      lv = v_iterp->u.ls_sorted[v_iterp->ls_index++];
       ret = 0;
     }
   } else {
@@ -1274,7 +1265,7 @@ al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, link_value_t *ret_v
 
   if (v_iterp->u.ls_sorted_str) {
     if (v_iterp->ls_index < v_iterp->ls_max_index) {
-      lv = ASTS v_iterp->u.ls_sorted_str[v_iterp->ls_index++];
+      lv = v_iterp->u.ls_sorted_str[v_iterp->ls_index++];
       ret = 0;
     }
   } else {
@@ -1310,7 +1301,7 @@ al_list_value_iter_end(struct al_list_value_iter_t *vip)
     free((void *)vip->ls_pitr);
   }
   if (vip->u.vptr)
-    free((void *)vip->u.ls_sorted_str);
+    free((void *)vip->u.vptr);
 
   free((void *)vip);
 
@@ -1605,9 +1596,10 @@ item_set_str(struct al_hash_t *ht, char *key, link_value_t v)
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   link_value_t lv = NULL;
-  if (v)
+  if (v) {
     lv = strdup(v);
-  if (!lv) return -2;
+    if (!lv) return -2;
+  }
 
   if (it) {
     free((void *)it->u.cstr);
@@ -1737,6 +1729,7 @@ int
 item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
 {
   if (!ht || !key) return -3;
+  if (ht->h_flag & HASH_TYPE_MASK) != HASH_FLAG_SCALAR) return -6;
   if (ht->iterators) {
 #if 1 <= AL_WARN
     fprintf(stderr, "WARN: iterm_delete_pv, other iterators exists on ht(%p)\n", ht);
@@ -1916,6 +1909,7 @@ item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, link_value_t lv,
 
   if (ht->h_flag & HASH_FLAG_PQ) {
     if (flag == HASH_FLAG_SCALAR) return -6;
+    if ((ht->h_flag & HASH_FLAG_PARAM_SET) == 0) return -9;
     return add_value_to_pq(ht, key, lv);
   }
 
@@ -2476,74 +2470,90 @@ al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
   return 0;
 }
 
-#define baseoff(base, index) ((base) + sizeof(void *) * (index))
-
-inline long
-med3(void *base, long x, long y, long z, int (*compar)(const void *, const void *))
+static inline void *
+med3(void *xp, void *yp, void *zp, int (*compar)(const void *, const void *))
 {
-  void *yp = baseoff(base, y);
-  void *zp = baseoff(base, z);
-  if ((*compar)(baseoff(base, x), yp) < 0) {
-    if ((*compar)(yp, zp) < 0) return y;
-    if ((*compar)(zp, baseoff(base, x)) < 0) return x;
-  } else {
-    if ((*compar)(zp, yp) < 0) return y;
-    if ((*compar)(baseoff(base, x), zp) < 0) return x;
-  }
-  return z;
+  return (*compar)(xp, yp) < 0 ?
+        ((*compar)(yp, zp) < 0 ? yp : ((*compar)(xp, zp) < 0 ? zp : xp ))
+       :((*compar)(yp, zp) > 0 ? yp : ((*compar)(xp, zp) < 0 ? xp : zp ));
 }
 
-inline static void
-ffk_swap(void *a, unsigned long x, unsigned long y)
-{
-  intptr_t tmp = *((intptr_t *)baseoff(a, x));
-  *((intptr_t *)baseoff(a, x)) = *((intptr_t *)baseoff(a, y));
-  *((intptr_t *)baseoff(a, y)) = tmp;
+#define swapcode(TYPE, parmi, parmj, n) {	\
+	long i = (n) / sizeof (TYPE); 		\
+	TYPE *pi = (TYPE *) (parmi); 		\
+	TYPE *pj = (TYPE *) (parmj); 		\
+	do { 					\
+	  TYPE t = *pi;				\
+	  *pi++ = *pj;				\
+	  *pj++ = t;				\
+        } while (--i > 0);			\
 }
+
+#define SWAPINIT(a, es) swaptype = ((char *)a - (char *)0) % sizeof(long) || \
+	es % sizeof(long) ? 2 : es == sizeof(long)? 0 : 1;
+
+static inline void
+swapfunc(char *a, char *b, int n, int swaptype)
+{
+  if (swaptype <= 1)
+    swapcode(long, a, b, n)
+  else
+    swapcode(char, a, b, n)
+}
+
+#define swap(a, b)			\
+  if (swaptype == 0) {			\
+    long t = *(long *)(a);		\
+    *(long *)(a) = *(long *)(b);	\
+    *(long *)(b) = t;			\
+  } else				\
+    swapfunc(a, b, esize, swaptype)
 
 void
-al_ffk(void *base, long nel,
+al_ffk(void *base, long nel, unsigned long esize,
        int (*compar)(const void *, const void *),
        long topn)
 {
-  long left = 0;
-  long right = nel - 1;
+  void *lv = base;
+  void *rv = base + esize * (nel - 1);
+  void *topnp = base + esize * topn;
+  int swaptype;
 
-  while (left < right) {
-    long w = right - left;
+  while (lv < rv) {
+    SWAPINIT(lv, esize);
+    long w = (rv - lv) / esize;
 
     if (7 < w) {
-      long lt  = left;
-      long mid = left + w / 2;
-      long rt  = right;
-      if (40 < w) {
-	long d = w / 8;
-	lt  = med3(base, lt, lt + d, lt + 2 * d, compar);
-	mid = med3(base, mid - d, mid, mid + d, compar);
-	rt  = med3(base, rt - 2 * d, rt - d, rt, compar);
+      void *lt  = lv;
+      void *mid = lt + (w / 2) * esize;
+      void *rt  = rv;
+      if (40  < w) {
+	unsigned long d = (w / 8) * esize;
+	lt  = med3(lt, lt + d, lt + 2 * d, compar);
+	mid = med3(mid - d, mid, mid + d, compar);
+	rt  = med3(rt - 2 * d, rt - d, rt, compar);
       }
-      long pvi = med3(base, lt, mid, rt, compar);
-      ffk_swap(base, pvi, right);
+      void *pvi = med3(lt, mid, rt, compar);
+      swap(pvi, rv);
     }
-
-    void *rv = baseoff(base, right);
-    long ll = left - 1;
-    long rr = right;
+    void *lp = lv - esize;
+    void *rp = rv;
     for (;;) {
-      while ((*compar)(baseoff(base, ++ll), rv) < 0) ;
-      while (0 < rr && (*compar)(baseoff(base, --rr), rv) > 0) ;
-      if (ll >= rr) break;
-      ffk_swap(base, ll, rr);
+      do { lp += esize; } while ((*compar)(lp, rv) < 0);
+      do { rp -= esize; } while (lp < rp && (*compar)(rp, rv) > 0);
+      if (lp >= rp) break;
+      swap(lp, rp);
     }
-    ffk_swap(base, right, ll);
+    swap(rv, lp);
 
-    if (ll == topn) break;
+    if (lp == topnp) break;
 
-    if (topn <= ll) right = ll - 1;
-    if (topn >= ll) left  = ll + 1;
+    if (topnp <= lp) rv = lp - esize;
+    if (topnp >= lp) lv = lp + esize;
   }
-  // qsort(base, topn, sizeof(void *), compar);
 }
+#undef SWAPINIT
+#undef swap
 
 /*****************************************************************/
 /*
