@@ -2478,6 +2478,8 @@ med3(void *xp, void *yp, void *zp, int (*compar)(const void *, const void *))
        :((*compar)(yp, zp) > 0 ? yp : ((*compar)(xp, zp) < 0 ? xp : zp ));
 }
 
+/* swap element macro, based on FreeBSD qsort.c */
+
 #define swapcode(TYPE, parmi, parmj, n) {	\
 	long i = (n) / sizeof (TYPE); 		\
 	TYPE *pi = (TYPE *) (parmi); 		\
@@ -2516,7 +2518,7 @@ al_ffk(void *base, long nel, unsigned long esize,
 {
   void *lv = base;
   void *rv = base + esize * (nel - 1);
-  void *topnp = base + esize * topn;
+  void *topnp = base + esize * (topn - 1);
   int swaptype;
 
   while (lv < rv) {
@@ -2528,7 +2530,7 @@ al_ffk(void *base, long nel, unsigned long esize,
       void *mid = lt + (w / 2) * esize;
       void *rt  = rv;
       if (40  < w) {
-	unsigned long d = (w / 8) * esize;
+	long d = (w / 8) * esize;
 	lt  = med3(lt, lt + d, lt + 2 * d, compar);
 	mid = med3(mid - d, mid, mid + d, compar);
 	rt  = med3(rt - 2 * d, rt - d, rt, compar);

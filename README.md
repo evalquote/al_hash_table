@@ -89,5 +89,5 @@ API are as follows. (from hash.h, not up-to-date)
     int al_sl_iter_end(struct al_skiplist_iter_t *iterp)
     int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v)
     int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp)
-    void al_ffk(void *base, unsigned long nel,
+    void al_ffk(void *base, long nel, unsigned long esize,
                 int (*compar)(const void *, const void *), long topk)
