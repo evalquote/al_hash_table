@@ -40,16 +40,18 @@ typedef struct list_ {
 
 /* hash entry, with unique key */
 
+union item_u {
+  value_t      value;
+  link_value_t cstr;
+  struct al_skiplist_t *skiplist;
+  void         *ptr;
+  list_t       *list;
+};
+
 struct item {
   struct item *chain;
   char *key;
-  union {
-    value_t      value;
-    link_value_t cstr;
-    struct al_skiplist_t *skiplist;
-    void         *ptr;
-    list_t	 *list;
-  } u;
+  union item_u u;
 };
 
 #define HASH_FLAG_PQ_SORT_DIC	AL_SORT_DIC
@@ -280,13 +282,13 @@ hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
 }
 
 static int
-hash_v_insert(struct al_hash_t *ht, unsigned int hv, char *key, value_t v)
+hash_v_insert(struct al_hash_t *ht, unsigned int hv, char *key, union item_u u)
 {
   int ret = 0;
   struct item *it = (struct item *)malloc(sizeof(struct item));
   if (!it) return -2;
 
-  it->u.value = v;
+  it->u = u;
   it->key = strdup(key);
   if (!it->key) {
     free((void *)it);
@@ -1156,7 +1158,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
     }
   }
 
-  vip->ls_flag = flag & (AL_ITER_AE|HASH_TYPE_MASK);
+  vip->ls_flag = flag;
   vip->ls_pitr = iterp;
   attach_value_iter(iterp);
   *v_iterp = vip;
@@ -1305,6 +1307,41 @@ al_list_value_iter_end(struct al_list_value_iter_t *vip)
 
   free((void *)vip);
 
+  return 0;
+}
+
+int
+al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
+			   value_t *ret_v_min, value_t *ret_v_max)
+{
+  if (!v_iterp) return -3;
+  if ((v_iterp->ls_flag & HASH_TYPE_STRING)) return -6;
+  if (!v_iterp->u.ls_sorted) return -6;
+  if (v_iterp->ls_max_index == 0) return -1;
+  
+  value_t va, vb;
+
+  if ((v_iterp->ls_flag & AL_SORT_FFK_ONLY) == 0) {
+    va = v_iterp->u.ls_sorted[0];
+    vb = v_iterp->u.ls_sorted[v_iterp->ls_max_index - 1];
+    if (ret_v_min) *ret_v_min = va < vb ? va : vb;
+    if (ret_v_max) *ret_v_max = va < vb ? vb : va;
+  } else {
+    value_t mx, mi;
+    mx = mi = v_iterp->u.ls_sorted[0];
+    int i = (v_iterp->ls_max_index & 1);
+    for (; i < v_iterp->ls_max_index; i += 2) {
+      if ((va = v_iterp->u.ls_sorted[i]) < (vb = v_iterp->u.ls_sorted[i+1])) {
+	mx = mx < vb ? vb : mx;
+	mi = va < mi ? va : mi;
+      } else {
+	mx = mx < va ? va : mx;
+	mi = vb < mi ? vb : mi;
+      }
+    }
+    if (ret_v_min) *ret_v_min = mi;
+    if (ret_v_max) *ret_v_max = mx;
+  }
   return 0;
 }
 
@@ -1567,7 +1604,8 @@ item_set(struct al_hash_t *ht, char *key, value_t v)
     it->u.value = v;
     return 0;
   }
-  return hash_v_insert(ht, hv, key, v);
+  union item_u u = { value: v };
+  return hash_v_insert(ht, hv, key, u);
 }
 
 #ifdef ITEM_PV
@@ -1606,7 +1644,8 @@ item_set_str(struct al_hash_t *ht, char *key, link_value_t v)
     it->u.cstr = lv;
     return 0;
   }
-  int ret = hash_v_insert(ht, hv, key, (intptr_t)lv);
+  union item_u u = { cstr: lv };
+  int ret = hash_v_insert(ht, hv, key, u);
   if (ret < 0)
     free((void *)lv);
   return ret;
@@ -1637,7 +1676,8 @@ item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, v
       free(it->u.ptr);
     it->u.ptr = ptr;
   } else {
-    ret = hash_v_insert(ht, hv, key, (intptr_t)ptr);
+    union item_u u = { ptr: ptr };
+    ret = hash_v_insert(ht, hv, key, u);
   }
   if (0 <= ret && ret_v)
     *ret_v = ptr;
@@ -1773,11 +1813,12 @@ item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   if (!it) {
+    union item_u u = { value: off };
 #ifdef INC_INIT_RETURN_ONE
-    int ret = hash_v_insert(ht, hv, key, off);
+    int ret = hash_v_insert(ht, hv, key, u);
     return ret == 0 ? 1 : ret;
 #else
-    return hash_v_insert(ht, hv, key, off);
+    return hash_v_insert(ht, hv, key, u);
 #endif
   }
 

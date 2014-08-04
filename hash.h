@@ -373,6 +373,9 @@ int al_list_value_iter(struct al_list_value_iter_t *v_iterp,
 int al_list_value_iter_str(struct al_list_value_iter_t *v_iterp,
 			   link_value_t *ret_v);
 
+int
+al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
+			   value_t *ret_v_min, value_t *ret_v_max);
 /*
  * Return number of values belong to value iterator.
  */
