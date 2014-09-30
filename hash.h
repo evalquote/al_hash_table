@@ -12,7 +12,7 @@
 #define ALH_H
 #include <inttypes.h>
 
-/* swicth */
+/* switch */
 #undef NUMSCAN
 #undef ITEM_PV	            /* define ITEM_PV enables item_xxx_pv() functions */
 #undef INC_INIT_RETURN_ONE  /* inc_init() return 1 when new key */
@@ -36,13 +36,13 @@ struct al_skiplist_iter_t;
 
 /* flags */
 /* sort order */
-#define AL_SORT_NO		0x0
-#define AL_SORT_DIC		0x1
-#define AL_SORT_COUNTER_DIC	0x2
-#define AL_SORT_NUMERIC		0x4
-#define AL_SORT_VALUE		0x8
-#define AL_SORT_FFK_ONLY	0x10
-#define AL_SORT_FFK_REV		0x20
+#define AL_SORT_NO		0x1
+#define AL_SORT_DIC		0x2
+#define AL_SORT_COUNTER_DIC	0x4
+#define AL_SORT_NUMERIC		0x8
+#define AL_SORT_VALUE		0x10
+#define AL_SORT_FFK_ONLY	0x20
+#define AL_SORT_FFK_REV		0x40
 #define AL_FLAG_NONE		AL_SORT_NO
 /* for iterator, call end() automatically at end of iteration */
 #define AL_ITER_AE		0x10000
@@ -55,7 +55,7 @@ struct al_skiplist_iter_t;
 
 
 /*
- * this macro is sutable for 'topk' parameter, means half position of items
+ * this macro is suitable for 'topk' parameter, means half position of items
  *
  * ex.
  *  ret = al_hash_topk_iter_init(ht_count, &itr,
@@ -86,7 +86,7 @@ struct al_pqueue_value_iter_t;
   al_n_entries_old: number of entries of previous half size hash table
                     entries of small hash table will moved to main hash table
   al_n_rehashing:   number of rehashing
-  al_n_cancel_rehashing: number of cancelling of moving entries between hash
+  al_n_cancel_rehashing: number of canceling of moving entries between hash
                          table iterators are attached to the hash table
  */
 struct al_hash_stat_t {
@@ -99,7 +99,7 @@ struct al_hash_stat_t {
 
 /*
  *  statistics
- *   histgram of chain length of main and previous small hash table
+ *   histogram of chain length of main and previous small hash table
  *   if chain length is over 10, count up [10] of returned array
  */
 typedef unsigned long al_chain_length_t[11];
@@ -279,11 +279,11 @@ int item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
  * create an iterator attached to ht
  *   after first al_hash_iter() call, the iterator points entries
  *    (when hash table is not empty)
- *  flag AL_SORT_NO:          item appears arbitary order.
+ *  flag AL_SORT_NO:          item appears arbitrary order.
  *       AL_SORT_DIC:         item appears dictionary order of key
  *       AL_SORT_COUNTER_DIC: item appears counter dictionary order of key
  *       logior AL_SORT_NUMERIC: sort key string numeric
- *       logior AL_SORT_VALUE: sort by value part insted of key,
+ *       logior AL_SORT_VALUE: sort by value part instead of key,
  *                                 AL_SORT_NUMERIC is ignored, if it is logior_ed.
  *       logior AL_ITER_AE:   invoke al_hash_iter_end() automatically at end of iteration,
  *                            do not call al_hash_iter_end() again.
@@ -301,14 +301,14 @@ int item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
 /* int al_hash_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag); */
 
  /*
-  * Iterate on only first top-k items accoring to the specified sort order
+  * Iterate on only first top-k items according to the specified sort order
   *   AL_SORT_DIC or AL_SORT_COUNTER_DIC.
   * if topk == 0 or flag is AL_SORT_NO, same as al_hash_iter_init()
-  * top k item appears arbitary order when AL_SORT_FFK_ONLY flag on.
-  *   (additional sort is cannceled)
+  * top k item appears arbitrary order when AL_SORT_FFK_ONLY flag on.
+  *   (additional sort is canceled)
   *   AL_SORT_FFK_REV reverse the order of the selected top k items.
   * 
-  * The macro AL_FFK_HALF is sutable for 'topk' parameter, means half position of items (median).
+  * The macro AL_FFK_HALF is suitable for 'topk' parameter, means half position of items (median).
   * See above comment of AL_FFK_HALF.
   */
 int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp, int flag, long topk);
@@ -392,7 +392,7 @@ int al_list_hash_rewind_value(struct al_list_value_iter_t *v_iterp);
 /*
  * advance iterator pointed to pq_hash and create an another iterator for access values
  *  flag AL_FLAG_NONE: no flag
- *       AL_ITER_AE:   invoke al_qpueue_value_iter_end() automatically.
+ *       AL_ITER_AE:   invoke al_pqueue_value_iter_end() automatically.
  *       else: return -7
  *  return -2 allocation fails
  */
@@ -431,9 +431,9 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *   with some iterators, iterators may or not may point the
  *   new entry on subsequent al_hash_iter() call.
  *
- * item_detete(), item_delete_pv():
+ * item_delete(), item_delete_pv():
  *   Can not delete entries of a hash table attached some iterators.
- *   Item_detete() / item_delete_pv() are return with -5 immediately
+ *   Item_delete() / item_delete_pv() are return with -5 immediately
  *   (either key is found, or not found).
  *
  * item_delete_iter():

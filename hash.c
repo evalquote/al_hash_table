@@ -57,7 +57,7 @@ struct item {
 #define HASH_FLAG_PQ_SORT_DIC	AL_SORT_DIC
 #define HASH_FLAG_PQ_SORT_C_DIC	AL_SORT_COUNTER_DIC
 #define HASH_FLAG_SORT_NUMERIC	AL_SORT_NUMERIC
-#define HASH_FLAG_SORT_ORD	(AL_SORT_DIC|AL_SORT_COUNTER_DIC)
+#define HASH_FLAG_SORT_ORD	(AL_SORT_NO|AL_SORT_DIC|AL_SORT_COUNTER_DIC)
 #define HASH_FLAG_SORT_MASK	(HASH_FLAG_SORT_ORD|AL_SORT_NUMERIC|AL_SORT_VALUE)
 
 #define HASH_FLAG_SCALAR	HASH_TYPE_SCALAR
@@ -69,7 +69,7 @@ struct item {
 #define HASH_FLAG_PARAM_SET	(HASH_TYPE_POINTER<<1)
 
 #define ITER_FLAG_AE		0x10000   // call end() at end of iteration
-#define ITER_FLAG_VIRTUAL	0x80000   // virtual hash_iter createed
+#define ITER_FLAG_VIRTUAL	0x80000   // virtual hash_iter created
                                           //  al_list_hash_get() or al_pqueue_hash_get()
 
 #define hash_size(n) (1<<(n))
@@ -1320,14 +1320,13 @@ al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
   if (v_iterp->ls_max_index == 0) return -1;
   
   value_t va, vb;
+  value_t mx, mi;
 
   if ((v_iterp->ls_flag & AL_SORT_FFK_ONLY) == 0) {
-    va = v_iterp->u.ls_sorted[0];
-    vb = v_iterp->u.ls_sorted[v_iterp->ls_max_index - 1];
-    if (ret_v_min) *ret_v_min = va < vb ? va : vb;
-    if (ret_v_max) *ret_v_max = va < vb ? vb : va;
+    mx = va = v_iterp->u.ls_sorted[0];
+    mi = vb = v_iterp->u.ls_sorted[v_iterp->ls_max_index - 1];
+    if (va < vb) { mi = va; mx = vb; }
   } else {
-    value_t mx, mi;
     mx = mi = v_iterp->u.ls_sorted[0];
     int i = (v_iterp->ls_max_index & 1);
     for (; i < v_iterp->ls_max_index; i += 2) {
@@ -1339,9 +1338,9 @@ al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
 	mi = vb < mi ? vb : mi;
       }
     }
-    if (ret_v_min) *ret_v_min = mi;
-    if (ret_v_max) *ret_v_max = mx;
   }
+  if (ret_v_min) *ret_v_min = mi;
+  if (ret_v_max) *ret_v_max = mx;
   return 0;
 }
 
@@ -1389,7 +1388,7 @@ al_is_list_iter(struct al_hash_iter_t *iterp)
 /**** iterator of priority queue ***/
 
 static int
-mk_pqeueu_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
+mk_pqueue_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 		    struct al_pqueue_value_iter_t **v_iterp, int flag)
 {
   int ret;
@@ -1433,7 +1432,7 @@ al_pqueue_hash_get(struct al_hash_t *ht, char *key,
   ip->hi_flag = ITER_FLAG_VIRTUAL;
   ip->ht = ht;
 
-  ret = mk_pqeueu_hash_iter(it, ip, v_iterp, flag);
+  ret = mk_pqueue_hash_iter(it, ip, v_iterp, flag);
   if (ret < 0) {
     free((void *)ip);
     return ret;
@@ -1467,7 +1466,7 @@ al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
 
   *key = it->key;
 
-  return mk_pqeueu_hash_iter(it, iterp, v_iterp, flag);
+  return mk_pqueue_hash_iter(it, iterp, v_iterp, flag);
 }
 
 int
@@ -2212,7 +2211,7 @@ sl_delete_node(struct al_skiplist_t *sl, pq_key_t key, struct slnode *np, struct
 {
   int i;
 #ifdef SL_FIRST_KEY
-  int c = strcmp(sl->first_key, key);  // eq check, insted of pq_k_cmp()
+  int c = strcmp(sl->first_key, key);  // eq check, instead of pq_k_cmp()
 #endif
 
   for (i = 0; i < sl->level; i++)

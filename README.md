@@ -18,7 +18,7 @@ API are as follows. (from hash.h, not up-to-date)
 
     int al_hash_stat(struct al_hash_t *ht,
                      struct al_hash_stat_t *statp,
-                     al_chain_lenght_t acl)
+                     al_chain_length_t acl)
     int al_hash_n_iterators(struct al_hash_t *ht)
 
     int item_set(struct al_hash_t *ht, char *key, value_t v)
