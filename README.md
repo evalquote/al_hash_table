@@ -4,6 +4,9 @@ in C, NOT thread safe, with iterators
 
 API are as follows. (from hash.h, not up-to-date)
     
+    typedef long value_t;
+    typedef const char * cstr_value_t;
+
     int al_init_hash(int type, int bit, struct al_hash_t **htp)
     int al_set_pqueue_hash_parameter(struct al_hash_t *ht,
                                      int sort_order, unsigned long max_n)
@@ -24,15 +27,15 @@ API are as follows. (from hash.h, not up-to-date)
     int item_set(struct al_hash_t *ht, char *key, value_t v)
     int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *pv)
     int item_add_value(struct al_hash_t *ht, char *key, value_t v) // add to list/pqueue
-    int item_add_value_str(struct al_hash_t *ht, char *key, link_value_t v) // add to link/pqueue
+    int item_add_value_str(struct al_hash_t *ht, char *key, cstr_value_t v) // add to link/pqueue
     int item_key(struct al_hash_t *ht, char *key)
     int item_get(struct al_hash_t *ht, char *key, value_t *ret_v)
-    int item_get_str(struct al_hash_t *ht, char *key, link_value_t *v)
+    int item_get_str(struct al_hash_t *ht, char *key, cstr_value_t *v)
     int item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size)
     int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v)
     int item_replace(struct al_hash_t *ht, char *key, value_t v)
     int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
-    int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v)
+    int item_replace_str(struct al_hash_t *ht, char *key, cstr_value_t v)
     int item_delete(struct al_hash_t *ht, char *key)
     int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
     int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
@@ -47,7 +50,7 @@ API are as follows. (from hash.h, not up-to-date)
     int al_hash_topk_iter_init(struct al_hash_t *ht, struct al_hash_iter_t **iterp,
 			       int flag, long topk)
     int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v)
-    int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v)
+    int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, cstr_value_t *ret_v)
     int al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **ret_v)
     int al_hash_iter_end(struct al_hash_iter_t *iterp)
     int item_replace_iter(struct al_hash_iter_t *iterp, value_t v)
@@ -59,7 +62,7 @@ API are as follows. (from hash.h, not up-to-date)
     int al_list_hash_topk_iter(struct al_hash_iter_t *iterp, const char **key,
 			       struct al_list_value_iter_t **v_iterp, int flag, long topk)
     int al_list_value_iter(struct al_list_value_iter_t *v_iterp, value_t *ret_v)
-    int al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, link_value_t *ret_v)
+    int al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, cstr_value_t *ret_v)
     int al_list_value_iter_end(struct al_list_value_iter_t *v_iterp)
     int al_list_hash_nvalue(struct al_list_value_iter_t *v_iterp)
     int al_list_hash_rewind_value(struct al_list_value_iter_t *v_iterp)
@@ -68,7 +71,7 @@ API are as follows. (from hash.h, not up-to-date)
                             struct al_pqueue_value_iter_t **v_iterp, int flag)
     int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp)
     int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
-                             link_value_t *keyp, pq_value_t *ret_count)
+                             cstr_value_t *keyp, pq_value_t *ret_count)
     int al_pqueue_hash_nvalue(struct al_pqueue_value_iter_t *v_iterp)
     int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp)
 
