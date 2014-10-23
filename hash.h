@@ -21,14 +21,14 @@
 typedef long value_t;
 
 /* type of hash entry link value */
-typedef const char * link_value_t;
+typedef const char * cstr_value_t;
 
 
 /*
  *  priority queue, type
  */
 typedef value_t pq_value_t;
-typedef link_value_t pq_key_t;
+typedef cstr_value_t pq_key_t;
 struct al_skiplist_t;
 struct al_skiplist_iter_t;
 
@@ -206,7 +206,7 @@ int al_is_list_iter(struct al_hash_iter_t *iterp);
  */
 int item_set(struct al_hash_t *ht, char *key, value_t v);
 int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
-int item_set_str(struct al_hash_t *ht, char *key, link_value_t v);
+int item_set_str(struct al_hash_t *ht, char *key, cstr_value_t v);
 int item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size);
 int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v);
 
@@ -215,7 +215,7 @@ int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int siz
  * return -2, allocation fails
  * return -6, hash table type is not 'linked'
  */
-int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, link_value_t lv, int flag);
+int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, int flag);
 #define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, HASH_TYPE_SCALAR)
 #define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), HASH_TYPE_STRING)
 #define item_add_value_pq(ht, key, lv) item_add_value_str((ht), (key), (lv))
@@ -238,11 +238,11 @@ int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, link_value_t
  */
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
-int item_get_str(struct al_hash_t *ht, char *key, link_value_t *ret_v);
+int item_get_str(struct al_hash_t *ht, char *key, cstr_value_t *ret_v);
 int item_get_pointer(struct al_hash_t *ht, char *key, void **ret_v);
 int item_replace(struct al_hash_t *ht, char *key, value_t v);
 int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
-int item_replace_str(struct al_hash_t *ht, char *key, link_value_t v);
+int item_replace_str(struct al_hash_t *ht, char *key, cstr_value_t v);
 int item_delete(struct al_hash_t *ht, char *key);
 int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
 
@@ -335,7 +335,7 @@ al_hash_iter_ht(struct al_hash_iter_t *iterp);
  * do not modify the string pointed by `key'
  */
 int al_hash_iter(struct al_hash_iter_t *iterp, const char **key, value_t *ret_v);
-int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, link_value_t *ret_v);
+int al_hash_iter_str(struct al_hash_iter_t *iterp, const char **key, cstr_value_t *ret_v);
 int al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **ret_v);
 /*
  * replace value field pointed by iterator
@@ -371,7 +371,7 @@ int al_list_value_iter_end(struct al_list_value_iter_t *v_iterp);
 int al_list_value_iter(struct al_list_value_iter_t *v_iterp,
 		       value_t *ret_v);
 int al_list_value_iter_str(struct al_list_value_iter_t *v_iterp,
-			   link_value_t *ret_v);
+			   cstr_value_t *ret_v);
 
 int
 al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
@@ -410,7 +410,7 @@ int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp);
  * return -1, reached end
  */
 int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
-			 link_value_t *keyp, pq_value_t *ret_count);
+			 cstr_value_t *keyp, pq_value_t *ret_count);
 
 /*
  * Return number of values belong to value iterator.
