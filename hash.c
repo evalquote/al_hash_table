@@ -72,7 +72,7 @@ struct item {
 #define ITER_FLAG_VIRTUAL	0x80000   // virtual hash_iter created
                                           //  al_list_hash_get() or al_pqueue_hash_get()
 
-#define hash_size(n) (1<<(n))
+#define hash_size(n) (1U<<(n))
 
 struct al_hash_iter_t;
 
@@ -89,6 +89,7 @@ struct al_hash_t {
 
   unsigned int hash_mask;
   unsigned int hash_mask_old;
+  long unique_id;
 
   struct item **hash_table;	// main hash table
   struct item **hash_table_old;
@@ -415,6 +416,16 @@ void *
 al_get_pointer_hash_pointer(const void *a)
 {
   return (*(struct item **)a)->u.ptr;
+}
+
+int al_init_unique_id(struct al_hash_t *ht, long id)
+{
+  if (!ht) return -3;
+  if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
+  if (ht->n_entries || ht->n_entries_old) return -7;
+
+  ht->unique_id = id;
+  return 0;
 }
 
 static void
@@ -1108,7 +1119,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 	return -2;
       }
       for (i = 0, dp = it->u.list; dp; dp = dp->link) {
-	int j;
+	unsigned int j;
 	for (j = 0; j < dp->va_used; j++)
 	  sarray[i++] = dp->u.va[j];
       }
@@ -1120,7 +1131,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 	return -2;
       }
       for (i = 0, dp = it->u.list; dp; dp = dp->link) {
-	int j;
+	unsigned int j;
 	for (j = 0; j < dp->va_used; j++)
 	  svarray[i++] = dp->u.value[j];
       }
@@ -1328,7 +1339,7 @@ al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
     if (va < vb) { mi = va; mx = vb; }
   } else {
     mx = mi = v_iterp->u.ls_sorted[0];
-    int i = (v_iterp->ls_max_index & 1);
+    unsigned int i = (v_iterp->ls_max_index & 1);
     for (; i < v_iterp->ls_max_index; i += 2) {
       if ((va = v_iterp->u.ls_sorted[i]) < (vb = v_iterp->u.ls_sorted[i+1])) {
 	mx = mx < vb ? vb : mx;
@@ -1603,7 +1614,7 @@ item_set(struct al_hash_t *ht, char *key, value_t v)
     it->u.value = v;
     return 0;
   }
-  union item_u u = { value: v };
+  union item_u u = { .value = v };
   return hash_v_insert(ht, hv, key, u);
 }
 
@@ -1621,7 +1632,8 @@ item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
     it->u.value = v;
     return 0;
   }
-  return hash_v_insert(ht, hv, key, v);
+  union item_u u = { .value = v };
+  return hash_v_insert(ht, hv, key, u);
 }
 #endif
 
@@ -1643,7 +1655,7 @@ item_set_str(struct al_hash_t *ht, char *key, cstr_value_t v)
     it->u.cstr = lv;
     return 0;
   }
-  union item_u u = { cstr: lv };
+  union item_u u = { .cstr = lv };
   int ret = hash_v_insert(ht, hv, key, u);
   if (ret < 0)
     free((void *)lv);
@@ -1675,7 +1687,7 @@ item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, v
       free(it->u.ptr);
     it->u.ptr = ptr;
   } else {
-    union item_u u = { ptr: ptr };
+    union item_u u = { .ptr = ptr };
     ret = hash_v_insert(ht, hv, key, u);
   }
   if (0 <= ret && ret_v)
@@ -1768,7 +1780,7 @@ int
 item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
 {
   if (!ht || !key) return -3;
-  if (ht->h_flag & HASH_TYPE_MASK) != HASH_FLAG_SCALAR) return -6;
+  if ((ht->h_flag & HASH_TYPE_MASK) != HASH_FLAG_SCALAR) return -6;
   if (ht->iterators) {
 #if 1 <= AL_WARN
     fprintf(stderr, "WARN: iterm_delete_pv, other iterators exists on ht(%p)\n", ht);
@@ -1780,7 +1792,7 @@ item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
   if (it) {
     if (ret_pv)
       *ret_pv = it->u.value;
-    free_value(ht->h_flag, it);
+    free_value(ht, it);
     free((void *)it->key);
     free((void *)it);
     return 0;
@@ -1788,6 +1800,66 @@ item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
   return -1;
 }
 #endif
+
+int
+item_unique_id(struct al_hash_t *ht, char *key, long *id)
+{
+  if (!ht || !key || !id) return -3;
+  if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
+  unsigned int hv = al_hash_fn_i(key);
+  struct item *it = hash_find(ht, key, hv);
+  if (it) {
+    *id = it->u.value;
+    return 0;
+  }
+  union item_u u = { .value = ht->unique_id++ };
+  int ret = hash_v_insert(ht, hv, key, u);
+  if (!ret) 
+    *id = u.value;
+  return ret;
+}
+
+int
+item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, char *key, long *id)
+{
+  int ret = 0;
+  if (!ht || !invht || !key || !id) return -3;
+  if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
+  if (!(invht->h_flag & HASH_FLAG_STRING)) return -6;
+
+  unsigned int hv = al_hash_fn_i(key);
+  struct item *it = hash_find(ht, key, hv);
+  if (it) {
+    *id = it->u.value;
+    return 0;
+  }
+  union item_u u = { .value = ht->unique_id++ };
+  ret = hash_v_insert(ht, hv, key, u);
+
+  if (!ret) {
+    cstr_value_t lv = strdup(key);
+    if (!lv) {
+      ht->unique_id--;
+      hash_delete(ht, key, hv);
+      return -2;
+    }
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%ld", u.value);
+    unsigned int ihv = al_hash_fn_i(buf);
+    union item_u uu = { .cstr = lv };
+    ret = hash_v_insert(invht, ihv, buf, uu);
+    if (!ret) {
+      *id = u.value;
+    } else {
+      free((void *)lv);
+      ht->unique_id--;
+      hash_delete(ht, key, hv);
+    }
+  }
+
+  return ret;
+}
 
 int
 item_inc(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
@@ -1812,7 +1884,7 @@ item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   if (!it) {
-    union item_u u = { value: off };
+    union item_u u = { .value = off };
 #ifdef INC_INIT_RETURN_ONE
     int ret = hash_v_insert(ht, hv, key, u);
     return ret == 0 ? 1 : ret;

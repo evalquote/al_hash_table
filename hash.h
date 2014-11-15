@@ -146,6 +146,13 @@ typedef unsigned long al_chain_length_t[11];
  * return -3 ht is NULL
  * return -6 ht is not pointer hash
  * return -9 call again
+ *
+ * al_init_unique_id
+ *  initialize id for item_unique_id() and item_unique_id_with_inv()
+ *
+ * return -3 ht is NULL
+ * return -6 ht is not scalor hash
+ * return -7 ht is not empty
  */
 int al_init_hash(int type, int bit, struct al_hash_t **htp);
 int al_set_pqueue_hash_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
@@ -155,6 +162,7 @@ int al_set_pointer_hash_parameter(struct al_hash_t *ht,
 				  int (*sort_p)(const void *, const void *),
 				  int (*sort_rev_p)(const void *, const void *));
 void *al_get_pointer_hash_pointer(const void *a);
+int al_init_unique_id(struct al_hash_t *ht, long id);
 
 /*
  * destroy hash table
@@ -225,8 +233,10 @@ int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t
  * return -1, key is not found
  * return -5, iterators are attached on the hash table
  *            (only item_delete and item_delete_pv)
- * return -6, item_set/item_get/item_replace on string_hash, or, 
- *            item_set_str/item_get_str/item_replace_str on scalar hash
+ * return -6, item_set/item_get/item_replace/item_unique_id on string_hash, or,
+ *            item_set_str/item_get_str/item_replace_str on scalar hash, or,
+ *            on item_unique_id_with_inv, first ht must be scalar hash and
+ *            second one must be string hash.
  *
  * if pointer for return value (ret_v, ret_pv) is NULL, ignore it
  * if ret_pv is not NULL, return previous value (when define ITEM_PV)
@@ -235,6 +245,15 @@ int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t
  *   either of scalar hash table and linked hash is acceptable as parameter
  * replace:
  *   if key is found, replace value field by v, else return -1
+ * item_unique_id()/item_unique_id_with_inv()
+ *   assign unique id number (long) to each hash key, saved in ht as value,
+ *   and return it to *ret_id. the id is incremented by one.
+ *   if some keys are deleted from ht, and set same key to ht later,
+ *   new id number is assigned.
+ *   item_unique_id_with_inv(), unique_id and key pair is saved in invht.
+ *   a format "%ld" is used to convert unique_id number to key string.
+ *   there are no linkage between ht and invht. so, when some keys are deleted
+ *   from ht, id and key pairs are remained in invht.
  */
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
@@ -245,6 +264,8 @@ int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
 int item_replace_str(struct al_hash_t *ht, char *key, cstr_value_t v);
 int item_delete(struct al_hash_t *ht, char *key);
 int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
+int item_unique_id(struct al_hash_t *ht, char *key, long *ret_id);
+int item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, char *key, long *ret_id);
 
 int al_list_topk_hash_get(struct al_hash_t *ht, char *key,
 			  struct al_list_value_iter_t **v_iterp, int flag, long topk);
@@ -341,7 +362,6 @@ int al_hash_iter_pointer(struct al_hash_iter_t *iterp, const char **key, void **
  * replace value field pointed by iterator
  * return -1, not pointed (just created or pointed item is deleted)
  * return -4, hash table is destroyed
- * return -6, hash table type is not 'scalar'
  */
 int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
 
@@ -349,7 +369,6 @@ int item_replace_iter(struct al_hash_iter_t *iterp, value_t v);
  * delete key/value item pointed by iterator
  * return -1, not pointed (just created or pointed item is deleted)
  * return -4, hash table is destroyed
- * return -6, hash table type is not 'scalar'
  */
 int item_delete_iter(struct al_hash_iter_t *iterp);
 
