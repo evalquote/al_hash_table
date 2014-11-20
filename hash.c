@@ -25,6 +25,9 @@
 #define MEAN_CHAIN_LENGTH 2
 #endif
 
+/* forward declaration */
+union item_u;
+
 /* type of list value */
 #define LCDR_SIZE_L 4
 #define LCDR_SIZE_U 64
@@ -37,6 +40,15 @@ typedef struct list_ {
     cstr_value_t va[1];  // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
   } u;
 } list_t;
+
+#define HEAP_SIZE_L 16	   /* initial size of heap */
+struct al_heap_t {
+  unsigned int flag;       /* sort order */
+  unsigned int max_n;      /* max queue length */
+  unsigned int heap_size;  /* size of allocated heap, <= max_n */
+  unsigned int n_entries;  /* number of entries on heap <= heap_size */
+  union item_u *heap;      /* size <= max_n + 1, one origin */
+};
 
 /* hash entry, with unique key */
 
@@ -715,7 +727,7 @@ iter_sort(struct al_hash_t *ht, struct al_hash_iter_t *ip, int flag, long topk)
 
   if (0 < topk && topk < sidx) {
     al_ffk((void *)it_array, sidx, sizeof(struct item *), sf, topk);
-    it_array = (struct item **)realloc(it_array, sizeof(struct item *) * topk);
+    it_array = (struct item **)realloc(it_array, sizeof(struct item *) * topk); // reduce size
     sidx = topk;
     if (flag & AL_SORT_FFK_REV) {
       // bit not HASH_FLAG_SORT_ORD part of flag
@@ -2101,6 +2113,23 @@ al_out_hash_stat(struct al_hash_t *ht, const char *title)
 }
 
 int
+al_nkeys(struct al_hash_t *ht, unsigned long *nkeys)
+{
+  if (!ht || !nkeys) return -3;
+  *nkeys = ht->n_entries + ht->n_entries_old;
+  return 0;
+}
+
+int
+al_next_unique_id(struct al_hash_t *ht, long *ret_id)
+{
+  if (!ht || !ret_id) return -3;
+  if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
+  *ret_id = ht->unique_id;
+  return 0;
+}
+
+int
 al_set_hash_err_msg_impl(struct al_hash_t *ht, const char *msg)
 {
   if (!ht) return -3;
@@ -2581,6 +2610,148 @@ al_sl_rewind_iter(struct al_skiplist_iter_t *itr)
   itr->current_node = sl->head->forward[0];
   return 0;
 }
+
+/*
+ *  heap structure
+ */
+
+static int
+heap_num_value_cmp(const void *a, const void *b)
+{
+  if (((union item_u *)a)->value == ((union item_u *)b)->value) return 0;
+  return ((union item_u *)a)->value < ((union item_u *)b)->value ? -1 : 1;
+}
+
+static int
+heapn_num_value_cmp(const void *a, const void *b)
+{
+  if (((union item_u *)a)->value == ((union item_u *)b)->value) return 0;
+  return ((union item_u *)a)->value > ((union item_u *)b)->value ? -1 : 1;
+}
+
+static void
+down_heap(struct al_heap_t *hp, int index, int (*compar)(const void *, const void *))
+{
+  int j;
+  int k = index;
+  union item_u *heap = hp->heap;
+  union item_u v = heap[k];
+  while (k <= hp->n_entries / 2) {
+    j = k + k;
+    if (j < hp->n_entries && compar(&heap[j], &heap[j + 1]) < 0)
+      j++;
+    if (compar(&v, &heap[j]) >= 0)
+      break;
+    heap[k] = heap[j];
+    k = j;
+  }
+  heap[k] = v;
+}
+
+static void
+up_heap(struct al_heap_t *hp, int index, int (*compar)(const void *, const void *))
+{
+  int k = index;
+  union item_u *heap = hp->heap;
+  union item_u v = heap[k];
+  while (compar(&heap[k / 2], &v) <= 0) {
+    heap[k] = heap[k / 2];
+    k = k / 2;
+  }
+  heap[k] = v;
+}
+
+static void
+replace_heap(struct al_heap_t *hp, value_t v, int (*compar)(const void *, const void *))
+{
+  hp->heap[0].value = v;
+  down_heap(hp, 0, compar);
+}
+
+static int
+enlarge_heap(struct al_heap_t *hp)
+{
+  unsigned int ns = hp->heap_size * 3 / 2;
+  if (hp->max_n < ns)
+    ns = hp->max_n;
+  union item_u *up = (union item_u *)realloc(hp->heap, sizeof(union item_u) * ns);
+  if (!up) {
+    return -3;  
+  }
+  hp->heap = up;
+  hp->heap_size = ns;
+  return 0;
+}
+
+int
+al_insert_heap(struct al_heap_t *hp, value_t v)
+{
+  int ret = 0;
+  unsigned int so = hp->flag;
+
+  if (so == AL_SORT_DIC) {
+    // keep smaller value items
+    // root has the maximum value on heap
+    if (hp->n_entries == hp->max_n) {
+      if (hp->heap[1].value <= v) return 0;
+      replace_heap(hp, v, heap_num_value_cmp);
+    } else {
+      if (hp->n_entries == hp->heap_size &&
+	  (ret = enlarge_heap(hp)) < 0)
+	return ret;
+      hp->heap[++hp->n_entries].value = v;
+      hp->heap[0].value = INT64_MAX;
+      up_heap(hp, hp->n_entries, heap_num_value_cmp);
+    }
+  } else  { // AL_SORT_COUNTER_DIC, keep bigger value items
+    // root has the minimum value on heap
+    if (hp->n_entries == hp->max_n) {
+      if (v <= hp->heap[1].value) return 0;
+      replace_heap(hp, v, heapn_num_value_cmp);
+    } else {
+      if (hp->n_entries == hp->heap_size &&
+	  (ret = enlarge_heap(hp)) < 0)
+	return ret;
+      hp->heap[++hp->n_entries].value = v;
+      hp->heap[0].value = -INT64_MAX;
+      up_heap(hp, hp->n_entries, heapn_num_value_cmp);
+    }
+  }
+  return ret;
+}
+
+int
+al_create_heap(struct al_heap_t **hpp, int sort_order, unsigned int max_n)
+{
+  int so = sort_order & HASH_FLAG_SORT_ORD;
+  if (so != AL_SORT_DIC && so != AL_SORT_COUNTER_DIC) return -7;
+
+  struct al_heap_t *hp = (struct al_heap_t *)malloc(sizeof(struct al_heap_t));
+  if (!hp) return -3;
+  hp->flag = so;
+  hp->max_n = max_n;
+  hp->heap_size = max_n < HEAP_SIZE_L ? max_n : HEAP_SIZE_L;
+  hp->n_entries = 0;
+  hp->heap = (union item_u *)calloc(hp->heap_size, sizeof(union item_u *) + 1);
+  if (!hp->heap) {
+    free((void *)hp);
+    return -3;
+  }
+  *hpp = hp;
+  return 0;
+}
+
+int
+al_free_heap(struct al_heap_t *hp)
+{
+  free((void *)hp->heap);
+  free((void *)hp);
+  return 0;
+}
+
+/*
+ * first find k
+ */
 
 static inline void *
 med3(void *xp, void *yp, void *zp, int (*compar)(const void *, const void *))

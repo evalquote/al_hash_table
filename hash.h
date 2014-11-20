@@ -23,7 +23,6 @@ typedef long value_t;
 /* type of hash entry link value */
 typedef const char * cstr_value_t;
 
-
 /*
  *  priority queue, type
  */
@@ -32,7 +31,10 @@ typedef cstr_value_t pq_key_t;
 struct al_skiplist_t;
 struct al_skiplist_iter_t;
 
-
+/*
+ * heap type
+ */
+struct al_heap_t;
 
 /* flags */
 /* sort order */
@@ -184,6 +186,9 @@ int al_hash_stat(struct al_hash_t *ht,
 		 al_chain_length_t acl);
 int al_out_hash_stat(struct al_hash_t *ht, const char *title);
 
+int al_nkeys(struct al_hash_t *ht, unsigned long *nkeys);
+int al_next_unique_id(struct al_hash_t *ht, long *ret_id);
+
 /*
  * set error message, print out it on error and AL_ITER_AE set.
  */
@@ -226,7 +231,7 @@ int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int siz
 int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, int flag);
 #define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, HASH_TYPE_SCALAR)
 #define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), HASH_TYPE_STRING)
-#define item_add_value_pq(ht, key, lv) item_add_value_str((ht), (key), (lv))
+#define item_add_value_pq_str(ht, key, lv) item_add_value_str((ht), (key), (lv))
 
 /*
  * find key on the hash table
@@ -544,6 +549,11 @@ int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp,
 int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
 int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v);
 int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
+
+/* heap */
+int al_create_heap(struct al_heap_t **hpp, int sort_order, unsigned int max_n);
+int al_free_heap(struct al_heap_t *hp);
+int al_insert_heap(struct al_heap_t *hp, value_t v);
 
 /* find first key */
 /* qsort like interface, element size is sizeof(void *) */

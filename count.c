@@ -46,19 +46,23 @@ main() {
     const char *ikey;
     value_t v;
 
-    // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE);
+    ret = al_hash_iter_init(ht_count, &itr, AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE);
+#if 0
     ret = al_hash_topk_iter_init(ht_count, &itr,
 				 AL_SORT_COUNTER_DIC|AL_SORT_VALUE|AL_ITER_AE,
 				 AL_FFK_HALF);
-    // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_DIC|AL_ITER_AE);
-    // ret = al_hash_iter_init(ht_count, &itr, AL_SORT_NO|AL_ITER_AE);
+    ret = al_hash_iter_init(ht_count, &itr, AL_SORT_DIC|AL_ITER_AE);
+    ret = al_hash_iter_init(ht_count, &itr, AL_SORT_NO|AL_ITER_AE);
+#endif
     if (ret < 0)
       fprintf(stderr, "itr init %d\n", ret);
 
     while (0 <= (ret = al_hash_iter(itr, &ikey, &v))) {
+      /*
       if (v < 2) { // exit loop before end of iteration, invoke _end() later.
 	break;
       }
+      */
       printf("%ld\t%s\n", v, ikey);
     }
     if (ret == 0) { // invoke _end() manually
