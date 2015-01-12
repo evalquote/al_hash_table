@@ -35,6 +35,7 @@ struct al_skiplist_iter_t;
  * heap type
  */
 struct al_heap_t;
+struct al_heap_iter_t;
 
 /* flags */
 /* sort order */
@@ -54,7 +55,6 @@ struct al_heap_t;
 #define HASH_TYPE_LIST		0x400
 #define HASH_TYPE_PQ		0x800
 #define HASH_TYPE_POINTER	0x1000
-
 
 /*
  * this macro is suitable for 'topk' parameter, means half position of items
@@ -231,6 +231,7 @@ int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int siz
 int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, int flag);
 #define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, HASH_TYPE_SCALAR)
 #define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), HASH_TYPE_STRING)
+#define item_add_value_pq(ht, key, v) item_add_value((ht), (key), (v))
 #define item_add_value_pq_str(ht, key, lv) item_add_value_str((ht), (key), (lv))
 
 /*
@@ -403,7 +404,7 @@ al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
 /*
  * Return number of values belong to value iterator.
  */
-int al_list_hash_nvalue(struct al_list_value_iter_t *v_iterp);
+int al_list_hash_iter_nvalue(struct al_list_value_iter_t *v_iterp);
 
 /*
  * Rewind value iteration.
@@ -433,13 +434,14 @@ int al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *v_iterp);
  * advance priority queue value iterator
  * return -1, reached end
  */
-int al_pqueue_value_iter(struct al_pqueue_value_iter_t *v_iterp,
-			 cstr_value_t *keyp, pq_value_t *ret_count);
+int al_pqueue_value_iter(struct al_pqueue_value_iter_t *vip, value_t *ret_v);
+int al_pqueue_value_iter_str(struct al_pqueue_value_iter_t *v_iterp,
+			     cstr_value_t *keyp, pq_value_t *ret_count);
 
 /*
  * Return number of values belong to value iterator.
  */
-int al_pqueue_hash_nvalue(struct al_pqueue_value_iter_t *v_iterp);
+int al_pqueue_hash_iter_nvalue(struct al_pqueue_value_iter_t *v_iterp);
 
 /*
  * Rewind value iteration.
@@ -502,12 +504,12 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *  return -2, allocation fails
  */
 int al_create_skiplist(struct al_skiplist_t **slp, int sort_order);
-
 int al_free_skiplist(struct al_skiplist_t *sl);
+int al_skiplist_stat(struct al_skiplist_t *sl);
+int al_set_skiplist_err_msg(struct al_skiplist_t *sl, const char *msg);
+
 int sl_empty_p(struct al_skiplist_t *sl);
-unsigned long sl_n_entries(struct al_skiplist_t *sl);
-int sl_skiplist_stat(struct al_skiplist_t *sl);
-int sl_set_skiplist_err_msg(struct al_skiplist_t *sl, const char *msg);
+long sl_n_entries(struct al_skiplist_t *sl);
 
 /*
  *  return -2, allocation fails
@@ -540,20 +542,28 @@ int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_val
 /*
  *  create an iterator attached to sl
  *  flag AL_FLAG_NONE: no flag
- *       AL_ITER_AE:   invoke al_sl_iter_end() automatically.
+ *       AL_ITER_AE:   invoke sl_iter_end() automatically.
  *       else: return -7
  *  return -2, allocation fails
  */
-int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp, int flag);
+int sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp, int flag);
 
-int al_sl_iter_end(struct al_skiplist_iter_t *iterp);
-int al_sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v);
-int al_sl_rewind_iter(struct al_skiplist_iter_t *iterp);
+int sl_iter_end(struct al_skiplist_iter_t *iterp);
+int sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v);
+int sl_rewind_iter(struct al_skiplist_iter_t *iterp);
 
 /* heap */
 int al_create_heap(struct al_heap_t **hpp, int sort_order, unsigned int max_n);
 int al_free_heap(struct al_heap_t *hp);
 int al_insert_heap(struct al_heap_t *hp, value_t v);
+int al_pop_heap(struct al_heap_t *hp, value_t *ret_v);
+int al_delete_heap(struct al_heap_t *hp, unsigned int pos, value_t *ret_v);
+int hp_empty_p(struct al_heap_t *hp);
+long hp_n_entries(struct al_heap_t *hp);
+int hp_iter_init(struct al_heap_t *hp, struct al_heap_iter_t **iterp, int flag);
+int hp_iter(struct al_heap_iter_t *iterp, pq_value_t *ret_v);
+int hp_iter_end(struct al_heap_iter_t *iterp);
+int hp_rewind_iter(struct al_heap_iter_t *itr);
 
 /* find first key */
 /* qsort like interface, element size is sizeof(void *) */
