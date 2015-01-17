@@ -48,6 +48,7 @@ struct al_heap_t {
   unsigned int heap_size;  /* size of allocated heap, <= max_n */
   unsigned int n_entries;  /* number of entries on heap <= heap_size */
   union item_u *heap;      /* size <= max_n + 1, one origin */
+  const char *err_msg;	   /* output on auto ended iterator abend */
 };
 
 /* hash entry, with unique key */
@@ -1458,6 +1459,9 @@ mk_pqueue_str_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   int ret;
   *v_iterp = NULL;
 
+  if (flag & AL_ITER_POP)
+    return -7;
+
   struct al_pqueue_value_iter_t *vip =
     (struct al_pqueue_value_iter_t *)calloc(1, sizeof(struct al_pqueue_value_iter_t));
   if (!vip) return -2;
@@ -1487,8 +1491,7 @@ mk_pqueue_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   if (!vip) return -2;
 
   vip->u.hp = it->u.heap;
-  //  N.I.Y
-  // ret = hp_iter_init(vip->u.hp, &vip->ui.hp_iter, AL_FLAG_NONE);
+  ret = hp_iter_init(vip->u.hp, &vip->ui.hp_iter, AL_FLAG_NONE|(flag & AL_ITER_POP));
   if (ret < 0) {
     free((void *)vip);
     return ret;
@@ -1506,7 +1509,7 @@ al_pqueue_hash_get(struct al_hash_t *ht, char *key,
 {
   int ret = 0;
   if (!ht || !key || !v_iterp) return -3;
-  if ((flag & ~(AL_ITER_AE|AL_FLAG_NONE)) != 0) return -7; // AL_ITER_AE, AL_FLAG_NONE are valid flags.
+  if ((flag & ~(AL_ITER_AE|AL_ITER_POP|AL_FLAG_NONE)) != 0) return -7;
   if (!(ht->h_flag & HASH_FLAG_PQ)) return -6;
 
   unsigned int hv = al_hash_fn_i(key);
@@ -1546,7 +1549,7 @@ al_pqueue_hash_iter(struct al_hash_iter_t *iterp, const char **key,
   *key = NULL;
   if (!(iterp->hi_flag & HASH_FLAG_PQ))
     ret = -6;
-  else if ((flag & ~(AL_ITER_AE|AL_FLAG_NONE)) != 0) // AL_ITER_AE, AL_FLAG_NONE are valid flags.
+  else if ((flag & ~(AL_ITER_AE|AL_ITER_POP|AL_FLAG_NONE)) != 0)
     ret = -7;
   else
     ret = advance_iter(iterp, &it);
@@ -1568,8 +1571,17 @@ int
 al_pqueue_value_iter(struct al_pqueue_value_iter_t *vip, value_t *ret_v)
 {	
   if (!vip) return -3;
-  int ret = 0;
-
+  int ret = hp_iter(vip->ui.hp_iter, ret_v);
+  if (ret < 0 && (vip->pi_flag & AL_ITER_AE)) {
+    if (ret == -1) { // normal end
+      al_pqueue_value_iter_end(vip);
+    } else {
+      const char *msg = "";
+      if (vip->pi_pitr && vip->pi_pitr->ht && vip->pi_pitr->ht->err_msg)
+	msg = vip->pi_pitr->ht->err_msg;
+      fprintf(stderr, "pqueue_value_iter %s advance error (code=%d)", msg, ret);
+    }
+  }
   return ret;
 }
 
@@ -1586,7 +1598,7 @@ al_pqueue_value_iter_str(struct al_pqueue_value_iter_t *vip,
       const char *msg = "";
       if (vip->pi_pitr && vip->pi_pitr->ht && vip->pi_pitr->ht->err_msg)
 	msg = vip->pi_pitr->ht->err_msg;
-      fprintf(stderr, "pqueue_value_iter %s advance error (code=%d)\n", msg, ret);
+      fprintf(stderr, "pqueue_value_iter_str %s advance error (code=%d)\n", msg, ret);
     }
   }
   return ret;
@@ -1596,7 +1608,11 @@ int
 al_pqueue_value_iter_end(struct al_pqueue_value_iter_t *vip)
 {
   if (!vip) return -3;
-  sl_iter_end(vip->ui.sl_iter);
+  if (vip->pi_flag & HASH_FLAG_SCALAR)
+    hp_iter_end(vip->ui.hp_iter);
+  else
+    sl_iter_end(vip->ui.sl_iter);
+
   detach_value_iter(vip->pi_pitr);
   if (vip->pi_pitr->hi_flag & ITER_FLAG_VIRTUAL) {
     detach_iter(vip->pi_pitr->ht, vip->pi_pitr);
@@ -2681,7 +2697,7 @@ sl_n_entries(struct al_skiplist_t *sl)
 int
 sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp, int flag)
 {
-  if (!sl) return -3;
+  if (!sl || !iterp) return -3;
   if ((flag & ~(AL_ITER_AE|AL_FLAG_NONE)) != 0) return -7; // AL_ITER_AE, AL_FLAG_NONE are valid flags.
   struct al_skiplist_iter_t *itr = (struct al_skiplist_iter_t *)malloc(sizeof(struct al_skiplist_iter_t));
   if (!itr) return -2;
@@ -2780,7 +2796,7 @@ up_heap(struct al_heap_t *hp, int index, int (*compar)(const void *, const void 
   int k = index;
   union item_u *heap = hp->heap;
   union item_u v = heap[k];
-  while (compar(&heap[k / 2], &v) <= 0) {
+  while (1 < k && compar(&heap[k / 2], &v) <= 0) {
     heap[k] = heap[k / 2];
     k = k / 2;
   }
@@ -2844,7 +2860,6 @@ al_insert_heap(struct al_heap_t *hp, value_t v)
 	  (ret = enlarge_heap(hp)) < 0)
 	return ret;
       hp->heap[++hp->n_entries].value = v;
-      hp->heap[0].value = INT64_MAX;
       up_heap(hp, hp->n_entries, heap_num_value_cmp);
     }
   } else  { // AL_SORT_COUNTER_DIC, keep bigger value items
@@ -2857,7 +2872,6 @@ al_insert_heap(struct al_heap_t *hp, value_t v)
 	  (ret = enlarge_heap(hp)) < 0)
 	return ret;
       hp->heap[++hp->n_entries].value = v;
-      hp->heap[0].value = -INT64_MAX;
       up_heap(hp, hp->n_entries, heapn_num_value_cmp);
     }
   }
@@ -2872,9 +2886,15 @@ al_pop_heap(struct al_heap_t *hp, value_t *ret_v)
   if (!hp->n_entries) return -1; // empty
   if (ret_v)
     *ret_v = hp->heap[1].value;
+  if (hp->n_entries == 1) {
+    hp->n_entries--;
+    return 0;
+  }
   hp->heap[1].value = hp->heap[hp->n_entries--].value;
+
   if (hp->n_entries <= 1)
     return 0;
+
   if (hp->flag == AL_SORT_DIC) {
     down_heap(hp, 1, heap_num_value_cmp);
   } else {
@@ -2901,10 +2921,21 @@ al_delete_heap(struct al_heap_t *hp, unsigned int pos, value_t *ret_v)
   hp->heap[pos].value = hp->heap[hp->n_entries--].value;
   if (hp->n_entries <= 1)
     return 0;
-  if (hp->flag == AL_SORT_DIC) {
-    down_heap(hp, pos, heap_num_value_cmp);
+
+  if (1 < pos &&
+      ((hp->flag == AL_SORT_DIC && hp->heap[pos].value > hp->heap[pos / 2].value) ||
+       (hp->flag != AL_SORT_DIC && hp->heap[pos].value < hp->heap[pos / 2].value) )) {
+    if (hp->flag == AL_SORT_DIC) {
+      up_heap(hp, pos, heap_num_value_cmp);
+    } else {
+      up_heap(hp, pos, heapn_num_value_cmp);
+    }
   } else {
-    down_heap(hp, pos, heapn_num_value_cmp);
+    if (hp->flag == AL_SORT_DIC) {
+      down_heap(hp, pos, heap_num_value_cmp);
+    } else {
+      down_heap(hp, pos, heapn_num_value_cmp);
+    }
   }
 
   return 0;
@@ -2924,6 +2955,7 @@ al_create_heap(struct al_heap_t **hpp, int sort_order, unsigned int max_n)
   hp->max_n = max_n;
   hp->heap_size = max_n < HEAP_SIZE_L ? max_n : HEAP_SIZE_L;
   hp->n_entries = 0;
+  hp->err_msg = NULL;
   hp->heap = (union item_u *)calloc(hp->heap_size, sizeof(union item_u *) + 1);
   if (!hp->heap) {
     free((void *)hp);
@@ -2955,29 +2987,76 @@ hp_n_entries(struct al_heap_t *hp)
   return hp->n_entries;
 }
 
-#if 0
+struct al_heap_iter_t {
+  struct al_heap_t *hp_p; // parent
+  unsigned int hp_flag;
+  unsigned int index;
+};
+
 int
 hp_iter_init(struct al_heap_t *hp, struct al_heap_iter_t **iterp, int flag)
 {
+  if (!hp || !iterp) return -3;
+  if ((flag & ~(AL_ITER_AE|AL_ITER_POP|AL_FLAG_NONE)) != 0)
+    return -7;
+  struct al_heap_iter_t *itr = (struct al_heap_iter_t *)malloc(sizeof(struct al_heap_iter_t));
+  if (!itr) return -2;
+  itr->hp_p = hp;
+  itr->index = 1;
+  itr->hp_flag = flag & (AL_ITER_AE|AL_ITER_POP);
+  *iterp = itr;
+  return 0;
 }
 
 /* advance iterator */
 int
 hp_iter(struct al_heap_iter_t *iterp, pq_value_t *ret_v)
 {
+  int ret = -3;
+  if (!iterp)
+    return -3;
+  if (!iterp->hp_p)
+    return -4;
+  ret = iterp->index <= iterp->hp_p->n_entries ? 0 : -1;
+  if (ret < 0) {
+    if (!(iterp->hp_flag & ITER_FLAG_AE)) return ret;
+    if (ret == -1) {
+      hp_iter_end(iterp);
+    } else {
+      const char *msg = "";
+      if (iterp->hp_p->err_msg)
+	msg = iterp->hp_p->err_msg;
+      fprintf(stderr, "hp_iter %s advance error (code=%d)\n", msg, ret);
+    }
+    return ret;
+  }
+  if (iterp->hp_flag & AL_ITER_POP) {
+    al_pop_heap(iterp->hp_p, ret_v);
+  } else {
+    if (ret_v)
+      *ret_v = iterp->hp_p->heap[iterp->index].value;
+    iterp->index++;
+  }
+  return 0;
 }
 
 int
 hp_iter_end(struct al_heap_iter_t *iterp)
 {
+  if (!iterp) return -3;
+  free((void *)iterp);
+  return 0;
 }
+
 int
-hp_rewind_iter(struct al_heap_iter_t *itr)
+hp_rewind_iter(struct al_heap_iter_t *iterp)
 {
+  if (!iterp) return -3;
+  if (iterp->hp_flag & AL_ITER_POP)
+    return -7;
+  iterp->index = 1;
+  return 0;
 }
-#endif
-
-
 
 /*
  * first find k

@@ -49,6 +49,8 @@ struct al_heap_iter_t;
 #define AL_FLAG_NONE		AL_SORT_NO
 /* for iterator, call end() automatically at end of iteration */
 #define AL_ITER_AE		0x10000
+/* for heap value iterator only, pop root on every iteration */
+#define AL_ITER_POP		0x20000
 
 #define HASH_TYPE_SCALAR	0x100
 #define HASH_TYPE_STRING	0x200
@@ -563,7 +565,7 @@ long hp_n_entries(struct al_heap_t *hp);
 int hp_iter_init(struct al_heap_t *hp, struct al_heap_iter_t **iterp, int flag);
 int hp_iter(struct al_heap_iter_t *iterp, pq_value_t *ret_v);
 int hp_iter_end(struct al_heap_iter_t *iterp);
-int hp_rewind_iter(struct al_heap_iter_t *itr);
+int hp_rewind_iter(struct al_heap_iter_t *iterp);
 
 /* find first key */
 /* qsort like interface, element size is sizeof(void *) */
