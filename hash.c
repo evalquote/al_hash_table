@@ -1637,7 +1637,10 @@ int
 al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *vip)
 {
   if (!vip) return -3;
-  return sl_rewind_iter(vip->ui.sl_iter);
+  if (vip->pi_flag & HASH_FLAG_STRING)
+    return sl_rewind_iter(vip->ui.sl_iter);
+  else
+    return hp_rewind_iter(vip->ui.hp_iter);
 }
 
 int
@@ -3196,13 +3199,15 @@ al_gettok(char *cp, char **savecp, char del)
 }
 
 int
-al_split_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *dels)
+al_split_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, char *str, const char *dels)
 {
   char **ap = elms;
   if (!elms || !tmp_cp) return -3;
   if (str) {
-    size_t ret = strlcpy(tmp_cp, str, tmp_size);
-    if (tmp_size <= ret) return -8;
+    if (tmp_cp != str) {
+      size_t ret = strlcpy(tmp_cp, str, tmp_size);
+      if (tmp_size <= ret) return -8;
+    }
     while ((*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (++ap >= &elms[size]) break;
     }
@@ -3213,14 +3218,15 @@ al_split_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_siz
 }
 
 int
-al_split_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *dels, int n)
+al_split_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, char *str, const char *dels, int n)
 {
   char **ap = elms;
   if (!elms || !tmp_cp) return -3;
   if (str) {
-    // strncpy(tmp_cp, str, tmp_size);
-    size_t ret = strlcpy(tmp_cp, str, tmp_size);
-    if (tmp_size <= ret) return -8;
+    if (tmp_cp != str) {
+      size_t ret = strlcpy(tmp_cp, str, tmp_size);
+      if (tmp_size <= ret) return -8;
+    }
     while (0 < --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (++ap >= &elms[size]) break;
     }
@@ -3233,13 +3239,15 @@ al_split_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_s
 }
 
 int
-al_split_nn_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *dels)
+al_split_nn_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, char *str, const char *dels)
 {
   char **ap = elms;
   if (!elms || !tmp_cp) return -3;
   if (str) {
-    size_t ret = strlcpy(tmp_cp, str, tmp_size);
-    if (tmp_size <= ret) return -8;
+    if (tmp_cp != str) {
+      size_t ret = strlcpy(tmp_cp, str, tmp_size);
+      if (tmp_size <= ret) return -8;
+    }
     while ((*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (**ap != '\0' && ++ap >= &elms[size]) break;
     }
@@ -3250,13 +3258,15 @@ al_split_nn_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_
 }
 
 int
-al_split_nn_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *dels, int n)
+al_split_nn_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_size, char *str, const char *dels, int n)
 {
   char **ap = elms;
   if (!elms || !tmp_cp) return -3;
   if (str) {
-    size_t ret = strlcpy(tmp_cp, str, tmp_size);
-    if (tmp_size <= ret) return -8;
+    if (tmp_cp != str) {
+      size_t ret = strlcpy(tmp_cp, str, tmp_size);
+      if (tmp_size <= ret) return -8;
+    }
     --n;
     while (0 < n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (**ap == '\0') continue;
@@ -3323,5 +3333,39 @@ al_strjoin_n_impl(char **elms, unsigned int elms_size,
   return 0;
 }
 #endif
+
+int
+al_readline(FILE *fd, char **line_p, int *line_size_p)
+{
+  if (!fd || !line_p || !line_size_p) return -3;
+  int len = -1;
+  char *line = *line_p;
+  int size = *line_size_p;
+  int off = 0;
+  int loff = 0;
+  char *rp = fgets(line, size, fd);
+
+  while (rp) {
+    len = loff + strlen(line + loff);
+    if (line[len - 1] == '\n') {  // read complete line
+      line[--len] = '\0';
+      break;
+    }
+    if (feof(fd)) /* EOF, skip realloc on EOF */
+      break;
+
+    /* read more */
+    off += AL_LINE_INC;
+    if (!(line = (char *)realloc(line, size + off))) return -2;
+    loff = size + off - AL_LINE_INC - 1; // start at last '\0' pos
+    rp = fgets(line + loff, AL_LINE_INC + 1, fd);
+  }
+
+  if (off) {
+    *line_p = line;
+    *line_size_p = size + off;
+  }
+  return len;
+}
 
 /****************************/

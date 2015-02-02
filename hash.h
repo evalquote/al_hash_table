@@ -606,8 +606,8 @@ al_gettok(char *cp, char **savecp, char del);
  *  al_split_n(elms, tmp, "abc\tdef\t\tghi", "\t", 3);
  *  elms== "abc", "def", "\t\tghi", NULL
   */
-int al_split_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del);
-int al_split_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del, int n);
+int al_split_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, char *str, const char *del);
+int al_split_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, char *str, const char *del, int n);
 #define al_split(elms, tmp, str, del) al_split_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_n(elms, tmp, str, del, n) al_split_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
@@ -620,13 +620,35 @@ int al_split_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned 
  *  elms== "abc", "def\tghi", NULL
  */
 
-int al_split_nn_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del);
-int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char *str, const char *del, int n);
+int al_split_nn_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, char *str, const char *del);
+int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, char *str, const char *del, int n);
 #define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_nn_n(elms, tmp, str, del, n) al_split_nn_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
 int al_strcjoin_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char delch, int n);
 #define al_strcjoin_n(elms, tmp_cp, del, n) al_str_join_n_impl((elms),sizeof(elms)/sizeof(char *),(tmp_cp),sizeof(tmp_cp),(del),(n))
 #define al_strcjoin(elms, tmp_cp, del, n) al_str_join_n_impl((elms),sizeof(elms)/sizeof(char *),(tmp_cp),sizeof(tmp_cp),(del),(n),sizeof(elms)/sizeof(char *))
+
+/* readline */
+/* initial line buffer size */
+#ifndef AL_LINE_SIZE
+#define AL_LINE_SIZE 10240
+#endif
+/* increment size */
+#ifndef AL_LINE_INC
+#define AL_LINE_INC   2048
+#endif
+int al_readline(FILE *fd, char **line_p, int *line_size_p);
+
+/*
+int  line_size = AL_LINE_SIZE; // default initial size
+char *line = (char *)malloc(line_size);
+int len;
+while (0 <= (len = al_readline(fd, &line, &line_size))) {
+  ...
+}
+free(line);
+
+ */
 
 #endif
