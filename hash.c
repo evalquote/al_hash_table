@@ -3227,7 +3227,7 @@ al_split_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_s
       size_t ret = strlcpy(tmp_cp, str, tmp_size);
       if (tmp_size <= ret) return -8;
     }
-    while (0 < --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
+    while (0 <= --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (++ap >= &elms[size]) break;
     }
     if (tmp_cp && n <= 0)
@@ -3268,7 +3268,7 @@ al_split_nn_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tm
       if (tmp_size <= ret) return -8;
     }
     --n;
-    while (0 < n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
+    while (0 <= n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (**ap == '\0') continue;
       if (++ap >= &elms[size]) break;
       --n;
