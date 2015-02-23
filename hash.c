@@ -38,6 +38,7 @@ typedef struct list_ {
   union {
     value_t value[1];    // variable size, LCDR_SIZE_L .. LCDR_SIZE_U	    
     cstr_value_t va[1];  // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
+    void *ptr[1];        // variable size, LCDR_SIZE_L .. LCDR_SIZE_U
   } u;
 } list_t;
 
@@ -143,7 +144,8 @@ struct al_list_value_iter_t {
   union {
     value_t *ls_sorted;
     cstr_value_t *ls_sorted_str;
-    void **vptr;
+    void **ls_sorted_ptr;
+    void *vptr; // for free()
   } u;
   struct al_hash_iter_t *ls_pitr; // parent
   unsigned int ls_max_index;
@@ -381,10 +383,10 @@ int
 al_init_hash(int type, int bit, struct al_hash_t **htp)
 {
   if ((type & ~HASH_TYPE_MASK) != 0) return -7;
-  if ((type & HASH_TYPE_LIST) != 0) {
-    if ((type & (HASH_TYPE_PQ|HASH_TYPE_POINTER)) != 0 ||
-	(type & (HASH_TYPE_SCALAR|HASH_TYPE_STRING)) == 0 ||
-	(type & (HASH_TYPE_SCALAR|HASH_TYPE_STRING)) == (HASH_TYPE_SCALAR|HASH_TYPE_STRING) ) {
+  if ((type & HASH_TYPE_LIST) != 0) { // list hash
+    if ((type & (HASH_TYPE_PQ)) != 0 ||
+	(type & (HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_POINTER)) == 0 ||
+	(type & (HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_POINTER)) == (HASH_TYPE_SCALAR|HASH_TYPE_STRING|HASH_TYPE_POINTER) ) {
       return -7;
     }
   } else if ((type & HASH_TYPE_PQ) != 0) {
@@ -437,6 +439,7 @@ al_set_pointer_hash_parameter(struct al_hash_t *ht,
   ht->sort_rev_p = sort_rev_p;
 
   ht->h_flag |= HASH_FLAG_PARAM_SET;
+  if (!sort_p != !sort_rev_p) return -8;
 
   return 0;
 }
@@ -445,6 +448,12 @@ void *
 al_get_pointer_hash_pointer(const void *a)
 {
   return (*(struct item **)a)->u.ptr;
+}
+
+void *
+al_get_pointer_list_hash_pointer(const void *a)
+{
+  return (void *)a;
 }
 
 int
@@ -459,14 +468,21 @@ al_init_unique_id(struct al_hash_t *ht, long id)
 }
 
 static void
-free_list_value(int flag, list_t *dp)
+free_list_value(struct al_hash_t *ht, list_t *dp)
 {
+  int flag = ht->h_flag;
   unsigned int i;
   while (dp) {
     list_t *nextp = dp->link;
     if (flag & HASH_FLAG_STRING) {
       for (i = dp->va_used; 0 < i;)
 	free((void *)dp->u.va[--i]);
+    } else if (flag & HASH_FLAG_POINTER) {
+      for (i = dp->va_used; 0 < i;)
+	if (ht->free_p)
+	  ht->free_p(dp->u.ptr[--i]);
+	else
+	  free(dp->u.ptr[--i]);
     }
     free((void *) dp);
     dp = nextp;
@@ -494,7 +510,8 @@ free_value(struct al_hash_t *ht, struct item *it)
     break;
   case HASH_FLAG_LIST|HASH_FLAG_SCALAR:
   case HASH_FLAG_LIST|HASH_FLAG_STRING:
-    free_list_value(ht->h_flag, it->u.list);
+  case HASH_FLAG_LIST|HASH_FLAG_POINTER:
+    free_list_value(ht, it->u.list);
     break;
   }
 }
@@ -1126,10 +1143,12 @@ vvn_cmp(const void *a, const void *b)
 }
 
 static int
-(*sort_vf(int flag))(const void *, const void *)
+(*sort_vf(struct al_hash_t *ht, int flag))(const void *, const void *)
 {
   int so = flag & HASH_FLAG_SORT_DICC;
-  if (flag & HASH_TYPE_SCALAR) {
+  if (flag & HASH_TYPE_POINTER) {
+    return so == AL_SORT_DIC ? ht->sort_p : ht->sort_rev_p; // may be NULL
+  } else if (flag & HASH_TYPE_SCALAR) {
     return so == AL_SORT_DIC ? vv_cmp : vvn_cmp;
   } else if (flag & AL_SORT_NUMERIC) {
     return so == AL_SORT_DIC ? v_num_cmp : vn_num_cmp;
@@ -1156,70 +1175,77 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   if (so == AL_SORT_NO) {
     vip->ls_link = vip->ls_current = it->u.list;
   } else {
+    struct al_hash_t *ht = iterp->ht;
     cstr_value_t *sarray = NULL;
     value_t *svarray = NULL;
-    int i;
+    void **sparray = NULL;
+    int i, j;
     unsigned int nvalue = vip->ls_max_index;
     list_t *dp;
+
+    int (*sf)(const void *, const void *) = sort_vf(ht, flag);
+    if (sf == NULL) {
+      free((void *)vip);
+      return -8;
+    }
+
     if (nvalue == 0) { // al_list_hash_iter_nvalue() may set vip->ls_max_index to correct value
       for (dp = it->u.list; dp; dp = dp->link)
 	nvalue += dp->va_used;
     }
 
-    if (iterp->hi_flag & HASH_FLAG_STRING) {
-      sarray = (cstr_value_t *)malloc(nvalue * sizeof(cstr_value_t));
-      if (!sarray) {
-	free((void *)vip);
-	return -2;
-      }
-      for (i = 0, dp = it->u.list; dp; dp = dp->link) {
-	unsigned int j;
-	for (j = 0; j < dp->va_used; j++)
-	  sarray[i++] = dp->u.va[j];
-      }
-      vip->u.ls_sorted_str = sarray;
-    } else {
+    if (iterp->hi_flag & HASH_FLAG_SCALAR) {
       svarray = (value_t *)malloc(nvalue * sizeof(value_t));
-      if (!svarray) {
-	free((void *)vip);
-	return -2;
-      }
-      for (i = 0, dp = it->u.list; dp; dp = dp->link) {
-	unsigned int j;
-	for (j = 0; j < dp->va_used; j++)
-	  svarray[i++] = dp->u.value[j];
-      }
+      if (!svarray) goto free_vip;
+      for (i = 0, dp = it->u.list; dp; dp = dp->link)
+	for (j = 0; j < dp->va_used; j++) svarray[i++] = dp->u.value[j];
       vip->u.ls_sorted = svarray;
+    } else if (iterp->hi_flag & HASH_FLAG_STRING) {
+      sarray = (cstr_value_t *)malloc(nvalue * sizeof(cstr_value_t));
+      if (!sarray) goto free_vip;
+      for (i = 0, dp = it->u.list; dp; dp = dp->link)
+	for (j = 0; j < dp->va_used; j++) sarray[i++] = dp->u.va[j];
+      vip->u.ls_sorted_str = sarray;
+    } else { // pointer
+      sparray = (void **)malloc(nvalue * sizeof(void *));
+      if (!sparray) goto free_vip;
+      for (i = 0, dp = it->u.list; dp; dp = dp->link)
+	for (j = 0; j < dp->va_used; j++) sparray[i++] = dp->u.ptr[j];
+      vip->u.ls_sorted_ptr = sparray;
     }
 
     vip->ls_max_index = nvalue;
-
-    int (*sf)(const void *, const void *) = sort_vf(flag);
 
     if (topk == AL_FFK_HALF)
       topk = nvalue / 2;
 
     if (0 < topk && topk < nvalue) {
-      if (iterp->hi_flag & HASH_FLAG_STRING) {
-	al_ffk((void *)vip->u.ls_sorted_str, nvalue, sizeof(cstr_value_t), sf, topk);
-	vip->u.ls_sorted_str = (cstr_value_t *)realloc(vip->u.ls_sorted_str, sizeof(cstr_value_t) * topk);
-      } else {
+      if (iterp->hi_flag & HASH_FLAG_SCALAR) {
 	al_ffk((void *)vip->u.ls_sorted, nvalue, sizeof(value_t), sf, topk);
 	vip->u.ls_sorted = (value_t *)realloc(vip->u.ls_sorted, sizeof(value_t) * topk);
+      } else if (iterp->hi_flag & HASH_FLAG_STRING) {
+	al_ffk((void *)vip->u.ls_sorted_str, nvalue, sizeof(cstr_value_t), sf, topk);
+	vip->u.ls_sorted_str = (cstr_value_t *)realloc(vip->u.ls_sorted_str, sizeof(cstr_value_t) * topk);
+      } else { // pointer
+	al_ffk((void *)vip->u.ls_sorted_ptr, nvalue, sizeof(void *), sf, topk);
+	vip->u.ls_sorted_ptr = (void *)realloc(vip->u.ls_sorted_ptr, sizeof(void *) * topk);
       }
+
       nvalue = topk;
       vip->ls_max_index = topk;
       if (flag & AL_SORT_FFK_REV) {
 	// bit_not (AL_SORT_DIC|AL_SORT_COUNTER_DIC) part of flag
 	int f = (flag & ~HASH_FLAG_SORT_DICC) | ((~flag) & HASH_FLAG_SORT_DICC);
-	sf = sort_vf(f);	// reverse order
+	sf = sort_vf(ht, f);	// reverse order
       }
     }
     if (topk == 0 || (flag & AL_SORT_FFK_ONLY) == 0) {
+      if (iterp->hi_flag & HASH_FLAG_SCALAR)
+	qsort((void *)vip->u.ls_sorted, nvalue, sizeof(value_t), sf);
       if (iterp->hi_flag & HASH_FLAG_STRING)
 	qsort((void *)vip->u.ls_sorted_str, nvalue, sizeof(cstr_value_t), sf);
       else
-	qsort((void *)vip->u.ls_sorted, nvalue, sizeof(value_t), sf);
+	qsort((void *)vip->u.ls_sorted_ptr, nvalue, sizeof(void *), sf);
     }
   }
 
@@ -1229,6 +1255,10 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   *v_iterp = vip;
 
   return 0;
+
+ free_vip:
+  free((void *)vip);
+  return -2;
 }
 
 int
@@ -1293,7 +1323,7 @@ al_list_value_iter(struct al_list_value_iter_t *v_iterp, value_t *ret_v)
   int ret = -1;
   value_t lv = 0;
   if (!v_iterp) return -3;
-  if ((v_iterp->ls_flag & HASH_TYPE_STRING)) return -6;
+  if ((v_iterp->ls_flag & (HASH_TYPE_STRING|HASH_TYPE_POINTER))) return -6;
 
   if (v_iterp->u.ls_sorted) {
     if (v_iterp->ls_index < v_iterp->ls_max_index) {
@@ -1328,7 +1358,7 @@ al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, cstr_value_t *ret_v
   int ret = -1;
   cstr_value_t lv = NULL;
   if (!v_iterp) return -3;
-  if ((v_iterp->ls_flag & HASH_TYPE_SCALAR)) return -6;
+  if ((v_iterp->ls_flag & (HASH_TYPE_SCALAR|HASH_TYPE_POINTER))) return -6;
 
   if (v_iterp->u.ls_sorted_str) {
     if (v_iterp->ls_index < v_iterp->ls_max_index) {
@@ -1351,6 +1381,42 @@ al_list_value_iter_str(struct al_list_value_iter_t *v_iterp, cstr_value_t *ret_v
   if (ret == 0) {
     if (ret_v)
       *ret_v = lv;
+  } else if (v_iterp->ls_flag & AL_ITER_AE)
+    al_list_value_iter_end(v_iterp);
+
+  return ret;
+}
+
+int
+al_list_value_iter_ptr(struct al_list_value_iter_t *v_iterp, void **ret_v)
+{
+  int ret = -1;
+  void *vptr = NULL;
+
+  if (!v_iterp) return -3;
+  if ((v_iterp->ls_flag & (HASH_TYPE_SCALAR|HASH_TYPE_STRING))) return -6;
+
+  if (v_iterp->u.ls_sorted_ptr) {
+    if (v_iterp->ls_index < v_iterp->ls_max_index) {
+      vptr = v_iterp->u.ls_sorted_ptr[v_iterp->ls_index++];
+      ret = 0;
+    }
+  } else {
+    while (v_iterp->ls_current) {
+      list_t *dp = v_iterp->ls_current;
+      if (v_iterp->ls_cindex < dp->va_used) {
+	vptr = dp->u.ptr[v_iterp->ls_cindex++];
+	ret = 0;
+	break;
+      }
+      v_iterp->ls_cindex = 0;
+      v_iterp->ls_current = dp->link;
+    }
+  }
+
+  if (ret == 0) {
+    if (ret_v)
+      *ret_v = vptr;
   } else if (v_iterp->ls_flag & AL_ITER_AE)
     al_list_value_iter_end(v_iterp);
 
@@ -1491,7 +1557,7 @@ mk_pqueue_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
   if (!vip) return -2;
 
   vip->u.hp = it->u.heap;
-  ret = hp_iter_init(vip->u.hp, &vip->ui.hp_iter, AL_FLAG_NONE|(flag & AL_ITER_POP));
+  ret = hp_iter_init(vip->u.hp, &vip->ui.hp_iter, flag & AL_ITER_POP);
   if (ret < 0) {
     free((void *)vip);
     return ret;
@@ -2090,12 +2156,26 @@ add_value_to_heap(struct al_hash_t *ht, char *key, value_t v)
 }
 
 static int
-add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv)
+add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, void *vptr, unsigned int size)
 {
   if (ht->h_flag & HASH_FLAG_STRING) {
     if (lv) {
       lv = strdup(lv);
       if (!lv) return -2;
+    }
+  } else if (ht->h_flag & HASH_FLAG_POINTER) {
+    if ((ht->h_flag & HASH_FLAG_PARAM_SET) == 0) return -10;
+    if (vptr) {
+      void *p = NULL;
+      if (ht->dup_p) {
+	int ret = ht->dup_p(vptr, size, &p);
+	if (ret < 0) return ret;
+      } else {
+	p = malloc(size);
+	if (!p) return -2;
+	memcpy(p, vptr, size);
+      }
+      vptr = p;
     }
   }
   unsigned int hv = al_hash_fn_i(key);
@@ -2109,10 +2189,13 @@ add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv)
       int sz = dp->va_size;
       if (sz < LCDR_SIZE_U)
 	sz <<= 1;
-      if (ht->h_flag & HASH_FLAG_STRING)
+      if (ht->h_flag & HASH_FLAG_SCALAR)
+	ndp = (list_t *)calloc(1, sizeof(list_t) + (sz - 1) * sizeof(value_t));	
+      else if (ht->h_flag & HASH_FLAG_STRING)
 	ndp = (list_t *)calloc(1, sizeof(list_t) + (sz - 1) * sizeof(cstr_value_t));
       else
-	ndp = (list_t *)calloc(1, sizeof(list_t) + (sz - 1) * sizeof(value_t));	
+	ndp = (list_t *)calloc(1, sizeof(list_t) + (sz - 1) * sizeof(void *));
+
       if (!ndp) goto free_lv;
 
       ndp->va_size = sz;
@@ -2121,17 +2204,23 @@ add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv)
       dp = ndp;
     }
 
-    if (ht->h_flag & HASH_FLAG_STRING)
+    if (ht->h_flag & HASH_FLAG_SCALAR)
+      dp->u.value[dp->va_used++] = v;
+    else if (ht->h_flag & HASH_FLAG_STRING)
       dp->u.va[dp->va_used++] = lv;
     else
-      dp->u.value[dp->va_used++] = v;
+      dp->u.ptr[dp->va_used++] = vptr;
+
     return 0;
   }
 
-  if (ht->h_flag & HASH_FLAG_STRING)
+  if (ht->h_flag & HASH_FLAG_SCALAR)
+    ndp = (list_t *)calloc(1, sizeof(list_t) + (LCDR_SIZE_L - 1) * sizeof(value_t));
+  else if (ht->h_flag & HASH_FLAG_STRING)
     ndp = (list_t *)calloc(1, sizeof(list_t) + (LCDR_SIZE_L - 1) * sizeof(cstr_value_t));
   else
-    ndp = (list_t *)calloc(1, sizeof(list_t) + (LCDR_SIZE_L - 1) * sizeof(value_t));
+    ndp = (list_t *)calloc(1, sizeof(list_t) + (LCDR_SIZE_L - 1) * sizeof(void *));
+
   if (!ndp) goto free_lv;
 
   it = (struct item *)malloc(sizeof(struct item));
@@ -2142,10 +2231,12 @@ add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv)
 
   ndp->va_size = LCDR_SIZE_L;
 
-  if (ht->h_flag & HASH_FLAG_STRING)
+  if (ht->h_flag & HASH_FLAG_SCALAR)
+    ndp->u.value[ndp->va_used++] = v;
+  else if (ht->h_flag & HASH_FLAG_STRING)
     ndp->u.va[ndp->va_used++] = lv;
   else
-    ndp->u.value[ndp->va_used++] = v;
+    ndp->u.ptr[ndp->va_used++] = vptr;
 
   it->u.list = ndp;
 
@@ -2162,13 +2253,19 @@ add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv)
  free_ndp:
     free((void *)ndp);
  free_lv:
-    free((void *)lv);
+    if (ht->h_flag & HASH_FLAG_STRING)
+      free((void *)lv);
+    else if (ht->free_p)
+      ht->free_p(vptr);
+    else
+      free(vptr);
 
     return ret;
 }
 
 int
-item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, int flag)
+item_add_value_impl(struct al_hash_t *ht, char *key,
+		    value_t v, cstr_value_t lv, void *vptr, unsigned int size, int flag)
 {
   if (!ht || !key) return -3;
 
@@ -2182,8 +2279,8 @@ item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv,
   }
 
   if (ht->h_flag & HASH_FLAG_LIST) {
-    if ((ht->h_flag & (HASH_FLAG_SCALAR|HASH_FLAG_STRING)) != flag) return -6;
-    return add_value_to_list(ht, key, v, lv);
+    if ((ht->h_flag & (HASH_FLAG_SCALAR|HASH_FLAG_STRING|HASH_TYPE_POINTER)) != flag) return -6;
+    return add_value_to_list(ht, key, v, lv, vptr, size);
   }
   return -6;
 }
@@ -3227,7 +3324,7 @@ al_split_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tmp_s
       size_t ret = strlcpy(tmp_cp, str, tmp_size);
       if (tmp_size <= ret) return -8;
     }
-    while (0 <= --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
+    while (0 < --n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (++ap >= &elms[size]) break;
     }
     if (tmp_cp && n <= 0)
@@ -3268,7 +3365,7 @@ al_split_nn_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tm
       if (tmp_size <= ret) return -8;
     }
     --n;
-    while (0 <= n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
+    while (0 < n && (*ap = strsep(&tmp_cp, dels)) != NULL) {
       if (**ap == '\0') continue;
       if (++ap >= &elms[size]) break;
       --n;

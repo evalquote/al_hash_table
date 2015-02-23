@@ -166,6 +166,7 @@ int al_set_pointer_hash_parameter(struct al_hash_t *ht,
 				  int (*sort_p)(const void *, const void *),
 				  int (*sort_rev_p)(const void *, const void *));
 void *al_get_pointer_hash_pointer(const void *a);
+void *al_get_pointer_list_hash_pointer(const void *a);
 int al_init_unique_id(struct al_hash_t *ht, long id);
 
 /*
@@ -230,9 +231,11 @@ int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int siz
  * return -2, allocation fails
  * return -6, hash table type is not 'linked'
  */
-int item_add_value_impl(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, int flag);
-#define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, HASH_TYPE_SCALAR)
-#define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), HASH_TYPE_STRING)
+int item_add_value_impl(struct al_hash_t *ht, char *key,
+			value_t v, cstr_value_t lv, void *vp, unsigned int, int flag);
+#define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, NULL, 0, HASH_TYPE_SCALAR)
+#define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), NULL, 0, HASH_TYPE_STRING)
+#define item_add_value_ptr(ht, key, ptr, size) item_add_value_impl((ht), (key), 0, NULL, (ptr), (size), HASH_TYPE_POINTER)
 #define item_add_value_pq(ht, key, v) item_add_value((ht), (key), (v))
 #define item_add_value_pq_str(ht, key, lv) item_add_value_str((ht), (key), (lv))
 
@@ -399,6 +402,8 @@ int al_list_value_iter(struct al_list_value_iter_t *v_iterp,
 		       value_t *ret_v);
 int al_list_value_iter_str(struct al_list_value_iter_t *v_iterp,
 			   cstr_value_t *ret_v);
+int al_list_value_iter_ptr(struct al_list_value_iter_t *v_iterp,
+			   void **ret_v);
 
 int
 al_list_value_iter_min_max(struct al_list_value_iter_t *v_iterp,
