@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "hash.h"
+#include "alhash.h"
 
 /*
  * WARN 0: NO
@@ -3249,6 +3249,7 @@ al_ffk(void *base, long nel, unsigned long esize,
 #undef SWAPINIT
 #undef swap
 
+#ifndef HAVE_STRLCPY
 /*****************************************************************/
 /*
  * Copy src to string dst of size siz.  At most siz-1 characters
@@ -3281,6 +3282,7 @@ strlcpy(char * __restrict dst, const char * __restrict src, size_t siz)
 	return(s - src - 1);	/* count does not include NUL */
 }
 /*****************************************************************/
+#endif
 
 char *
 al_gettok(char *cp, char **savecp, char del)

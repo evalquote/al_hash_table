@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "hash.h"
+#include "alhash.h"
 
 struct al_hash_t *ht_count;
 
