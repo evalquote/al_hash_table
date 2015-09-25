@@ -1,6 +1,8 @@
-bin_PROGRAMS = alcount
+bin_PROGRAMS = alcount lossy_counting
 
 alcount_SOURCES = alcount.c
+
+lossy_counting_SOURCES = lossy_counting.h lossy_counting.c
 
 LDADD = $(top_builddir)/lib/libalhash.la
 

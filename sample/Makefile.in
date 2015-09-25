@@ -88,7 +88,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = alcount$(EXEEXT)
+bin_PROGRAMS = alcount$(EXEEXT) lossy_counting$(EXEEXT)
 subdir = sample
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -108,6 +108,10 @@ AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+am_lossy_counting_OBJECTS = lossy_counting.$(OBJEXT)
+lossy_counting_OBJECTS = $(am_lossy_counting_OBJECTS)
+lossy_counting_LDADD = $(LDADD)
+lossy_counting_DEPENDENCIES = $(top_builddir)/lib/libalhash.la
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -142,8 +146,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(alcount_SOURCES)
-DIST_SOURCES = $(alcount_SOURCES)
+SOURCES = $(alcount_SOURCES) $(lossy_counting_SOURCES)
+DIST_SOURCES = $(alcount_SOURCES) $(lossy_counting_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -288,6 +292,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 alcount_SOURCES = alcount.c
+lossy_counting_SOURCES = lossy_counting.h lossy_counting.c
 LDADD = $(top_builddir)/lib/libalhash.la
 AM_CPPFLAGS = -I$(top_builddir)/include/alhash
 all: all-am
@@ -377,6 +382,10 @@ alcount$(EXEEXT): $(alcount_OBJECTS) $(alcount_DEPENDENCIES) $(EXTRA_alcount_DEP
 	@rm -f alcount$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(alcount_OBJECTS) $(alcount_LDADD) $(LIBS)
 
+lossy_counting$(EXEEXT): $(lossy_counting_OBJECTS) $(lossy_counting_DEPENDENCIES) $(EXTRA_lossy_counting_DEPENDENCIES) 
+	@rm -f lossy_counting$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(lossy_counting_OBJECTS) $(lossy_counting_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -384,6 +393,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/alcount.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lossy_counting.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
