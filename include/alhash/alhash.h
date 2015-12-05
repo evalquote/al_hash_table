@@ -630,6 +630,12 @@ int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsign
 #define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_nn_n(elms, tmp, str, del, n) al_split_nn_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
+/* get number of separated elments */
+int n_elements(const char *str, const char *del);
+
+/* get number of separated elments, not return nul string */
+int n_elements_nn(const char *str, const char *del);
+
 int al_strcjoin_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char delch, int n);
 #define al_strcjoin_n(elms, tmp_cp, del, n) al_str_join_n_impl((elms),sizeof(elms)/sizeof(char *),(tmp_cp),sizeof(tmp_cp),(del),(n))
 #define al_strcjoin(elms, tmp_cp, del, n) al_str_join_n_impl((elms),sizeof(elms)/sizeof(char *),(tmp_cp),sizeof(tmp_cp),(del),(n),sizeof(elms)/sizeof(char *))

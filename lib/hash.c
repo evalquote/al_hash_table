@@ -3380,6 +3380,44 @@ al_split_nn_n_impl(char **elms, unsigned int size, char *tmp_cp, unsigned int tm
   return ap - &elms[0];
 }
 
+int
+n_elements(const char *str, const char *del)
+{
+  if (!str || !del) return -3;
+  int count = 1;
+  if (!*str) return count; /* empty string */
+
+  size_t cp = 0;
+  for (;;) {
+    cp += strcspn(str + cp, del);
+    count++;
+    if (!str[cp]) break;
+    cp++;
+  }
+  return count;
+}
+
+int
+n_elements_nn(const char *str, const char *del)
+{
+  if (!str || !del) return -3;
+
+  int count = 1;
+  if (!*str) return count; /* empty string */
+
+  size_t cp = 0;
+  for (;;) {
+    size_t np = strcspn(str + cp, del);
+    if (np != 0) {
+      cp += np;
+      count++;
+    }
+    if (!str[cp]) break;
+    cp++;
+  }
+  return count;
+}
+
 /* join elms[0] .. elms[n-1] with delch */
 int
 al_strcjoin_n_impl(char **elms, unsigned int elms_size,
