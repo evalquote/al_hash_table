@@ -11,7 +11,9 @@ struct al_hash_t *ht_count;
 int
 main() {
   int ret;
-  char line[512];
+  int line_size = AL_LINE_SIZE; // default initial size
+  char *line = (char *)malloc(line_size);
+  int len;
 
   ret = al_init_hash(HASH_TYPE_SCALAR, AL_DEFAULT_HASH_BIT, &ht_count);
   if (ret < 0) {
@@ -20,22 +22,25 @@ main() {
   }
   al_set_hash_err_msg(ht_count, "ht_count:");
 
-  while (fgets(line, sizeof(line), stdin)) {
-    int len = strlen(line);
-    if (0 < len)
-      line[len - 1] = '\0';
+  while (0 <= (len = al_readline(stdin, &line, &line_size))) {
 #if 0
     ret = item_inc_init(ht_count, line, (value_t)1, NULL);
-    if (ret < 0)
+    if (ret < 0) {
       fprintf(stderr, "inc %d\n", ret);
+    }
 #else
-    char *ap, *tmp_cp;
-    tmp_cp = line;
-    while ((ap = strsep(&tmp_cp, " \t")) != NULL) {
-      if (*ap == '\0') continue;
-      ret = item_inc_init(ht_count, ap, (value_t)1, NULL);
-      if (ret < 0)
+    int nelm = n_elements_nn(line, " \t");  // one more for last NULL
+    char *elms[nelm];
+    int retn = al_split_nn_impl(elms, nelm, line, line_size, line, " \t");
+    if (retn < 0) {
+      fprintf(stderr, "al_split_nn %d\n", ret);
+      continue;
+    }
+    for (int i = 0; i < retn; i++) {
+      ret = item_inc_init(ht_count, elms[i], (value_t)1, NULL);
+      if (ret < 0) {
 	fprintf(stderr, "inc %d\n", ret);
+      }
     }
 #endif
   }
@@ -73,6 +78,7 @@ main() {
   ret = al_free_hash(ht_count);
   if (ret < 0)
     fprintf(stderr, "free ht_count %d\n", ret);
+  free(line);
 
   exit(0);
 }
