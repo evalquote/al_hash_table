@@ -2,7 +2,7 @@
 /*
  *  Use and distribution licensed under the BSD license.  See
  *  the LICENSE file for full text.
- * 
+ *
  * latest version see, https://github.com/evalquote/al_hash_table
  */
 
@@ -16,7 +16,7 @@
 #undef NUMSCAN
 #undef ITEM_PV	            /* define ITEM_PV enables item_xxx_pv() functions */
 #undef INC_INIT_RETURN_ONE  /* inc_init() return 1 when new key */
-		   
+
 /* type of hash entry scalar value */
 typedef long value_t;
 
@@ -129,7 +129,7 @@ typedef unsigned long al_chain_length_t[11];
  *    multiple (char *) values for a key
  *       HASH_TYPE_LIST    // list is represented by cdr coding.
  *       HASH_TYPE_PQ      // priority queue
- * 
+ *
  * bit == 0, use AL_DEFAULT_HASH_BIT
  *
  * al_set_pqueue_hash_parameter
@@ -146,7 +146,7 @@ typedef unsigned long al_chain_length_t[11];
  *    pass compare function parameter to al_get_pointer_hash_pointer(),
  *    pointer to user structure is returned.
  *
- * return -2 allocation fails 
+ * return -2 allocation fails
  * return -3 ht is NULL
  * return -6 ht is not pointer hash
  * return -9 call again
@@ -265,6 +265,9 @@ int item_add_value_impl(struct al_hash_t *ht, char *key,
  *   a format "%ld" is used to convert unique_id number to key string.
  *   there are no linkage between ht and invht. so, when some keys are deleted
  *   from ht, id and key pairs are remained in invht.
+ * item_get_or_set()
+ *   if key is found, return the value and return 0
+ *   if key is not found, new key/id entry is inserted to a hash table and return 1
  */
 int item_key(struct al_hash_t *ht, char *key);
 int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
@@ -277,6 +280,7 @@ int item_delete(struct al_hash_t *ht, char *key);
 int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
 int item_unique_id(struct al_hash_t *ht, char *key, long *ret_id);
 int item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, char *key, long *ret_id);
+int item_get_or_set(struct al_hash_t *ht, char *key, long *v, long id);
 
 int al_list_topk_hash_get(struct al_hash_t *ht, char *key,
 			  struct al_list_value_iter_t **v_iterp, int flag, long topk);
@@ -326,7 +330,7 @@ int item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
  *
  * al_hash_auto_end_iter_init() create an iterator which will be automatic end
  * at end of iteration.  It is not necessary to call al_hash_iter_end() on
- * normal end. 
+ * normal end.
  *
  * Now, this function is implemented as macro, which calls al_hash_topk_iter_init()
  */
@@ -339,7 +343,7 @@ int item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
   * top k item appears arbitrary order when AL_SORT_FFK_ONLY flag on.
   *   (additional sort is canceled)
   *   AL_SORT_FFK_REV reverse the order of the selected top k items.
-  * 
+  *
   * The macro AL_FFK_HALF is suitable for 'topk' parameter, means half position of items (median).
   * See above comment of AL_FFK_HALF.
   */
