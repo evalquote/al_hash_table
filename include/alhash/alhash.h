@@ -14,7 +14,8 @@
 
 /* switch */
 #undef NUMSCAN
-#undef ITEM_PV	            /* define ITEM_PV enables item_xxx_pv() functions */
+// #undef ITEM_PV	            /* define ITEM_PV enables item_xxx_pv() functions */
+#define ITEM_PV	            /* define ITEM_PV enables item_xxx_pv() functions */
 #undef INC_INIT_RETURN_ONE  /* inc_init() return 1 when new key */
 
 /* type of hash entry scalar value */
@@ -220,18 +221,18 @@ int al_is_list_iter(struct al_hash_iter_t *iterp);
  * return -2, allocation fails
  * item_set_pointer[2](), v must not be NULL or return -3
  */
-int item_set(struct al_hash_t *ht, char *key, value_t v);
-int item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
-int item_set_str(struct al_hash_t *ht, char *key, cstr_value_t v);
-int item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size);
-int item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v);
+int item_set(struct al_hash_t *ht, const char *key, value_t v);
+int item_set_pv(struct al_hash_t *ht, const char *key, value_t v, value_t *ret_pv);
+int item_set_str(struct al_hash_t *ht, const char *key, cstr_value_t v);
+int item_set_pointer(struct al_hash_t *ht, const char *key, void *v, unsigned int size);
+int item_set_pointer2(struct al_hash_t *ht, const char *key, void *v, unsigned int size, void **ret_v);
 
 /*
  * add value to list or pqueue hashtable
  * return -2, allocation fails
  * return -6, hash table type is not 'linked'
  */
-int item_add_value_impl(struct al_hash_t *ht, char *key,
+int item_add_value_impl(struct al_hash_t *ht, const char *key,
 			value_t v, cstr_value_t lv, void *vp, unsigned int, int flag);
 #define item_add_value(ht, key, v) item_add_value_impl((ht), (key), (v), NULL, NULL, 0, HASH_TYPE_SCALAR)
 #define item_add_value_str(ht, key, lv) item_add_value_impl((ht), (key), 0, (lv), NULL, 0, HASH_TYPE_STRING)
@@ -269,24 +270,24 @@ int item_add_value_impl(struct al_hash_t *ht, char *key,
  *   if key is found, return the value and return 0
  *   if key is not found, new key/id entry is inserted to a hash table and return 1
  */
-int item_key(struct al_hash_t *ht, char *key);
-int item_get(struct al_hash_t *ht, char *key, value_t *ret_v);
-int item_get_str(struct al_hash_t *ht, char *key, cstr_value_t *ret_v);
-int item_get_pointer(struct al_hash_t *ht, char *key, void **ret_v);
-int item_replace(struct al_hash_t *ht, char *key, value_t v);
-int item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv);
-int item_replace_str(struct al_hash_t *ht, char *key, cstr_value_t v);
-int item_delete(struct al_hash_t *ht, char *key);
-int item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv);
-int item_unique_id(struct al_hash_t *ht, char *key, long *ret_id);
-int item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, char *key, long *ret_id);
-int item_get_or_set(struct al_hash_t *ht, char *key, long *v, long id);
+int item_key(struct al_hash_t *ht, const char *key);
+int item_get(struct al_hash_t *ht, const char *key, value_t *ret_v);
+int item_get_str(struct al_hash_t *ht, const char *key, cstr_value_t *ret_v);
+int item_get_pointer(struct al_hash_t *ht, const char *key, void **ret_v);
+int item_replace(struct al_hash_t *ht, const char *key, value_t v);
+int item_replace_pv(struct al_hash_t *ht, const char *key, value_t v, value_t *ret_pv);
+int item_replace_str(struct al_hash_t *ht, const char *key, cstr_value_t v);
+int item_delete(struct al_hash_t *ht, const char *key);
+int item_delete_pv(struct al_hash_t *ht, const char *key, value_t *ret_pv);
+int item_unique_id(struct al_hash_t *ht, const char *key, long *ret_id);
+int item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, const char *key, long *ret_id);
+int item_get_or_set(struct al_hash_t *ht, const char *key, long *v, long id);
 
-int al_list_topk_hash_get(struct al_hash_t *ht, char *key,
+int al_list_topk_hash_get(struct al_hash_t *ht, const char *key,
 			  struct al_list_value_iter_t **v_iterp, int flag, long topk);
 #define al_list_hash_get(ht, key, v_iterp, flag) al_list_topk_hash_get((ht), (key), (v_iterp), (flag), 0)
 
-int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
+int al_pqueue_hash_get(struct al_hash_t *ht, const char *key,
 		       struct al_pqueue_value_iter_t **v_iterp, int flag);
 
 /*
@@ -306,8 +307,8 @@ int al_pqueue_hash_get(struct al_hash_t *ht, char *key,
  *     return -2, allocation fails
  *     return -6, ht is string hash
  */
-int item_inc(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
-int item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v);
+int item_inc(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v);
+int item_inc_init(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v);
 
 /* iterators */
 

@@ -262,7 +262,7 @@ do_rehashing(struct al_hash_t *ht)
 }
 
 static struct item *
-hash_find(struct al_hash_t *ht, char *key, unsigned int hv)
+hash_find(struct al_hash_t *ht, const char *key, unsigned int hv)
 {
   struct item *it;
   unsigned int hindex;
@@ -281,7 +281,7 @@ hash_find(struct al_hash_t *ht, char *key, unsigned int hv)
 }
 
 static int
-hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
+hash_insert(struct al_hash_t *ht, unsigned int hv, const char *key, struct item *it)
 {
   int ret = 0;
   unsigned int hindex;
@@ -307,7 +307,7 @@ hash_insert(struct al_hash_t *ht, unsigned int hv, char *key, struct item *it)
 }
 
 static int
-hash_v_insert(struct al_hash_t *ht, unsigned int hv, char *key, union item_u u)
+hash_v_insert(struct al_hash_t *ht, unsigned int hv, const char *key, union item_u u)
 {
   int ret = 0;
   struct item *it = (struct item *)malloc(sizeof(struct item));
@@ -328,7 +328,7 @@ hash_v_insert(struct al_hash_t *ht, unsigned int hv, char *key, union item_u u)
 }
 
 static struct item *
-hash_delete(struct al_hash_t *ht, char *key, unsigned int hv)
+hash_delete(struct al_hash_t *ht, const char *key, unsigned int hv)
 {
   struct item *it;
   struct item **place;
@@ -1262,7 +1262,7 @@ mk_list_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 }
 
 int
-al_list_topk_hash_get(struct al_hash_t *ht, char *key,
+al_list_topk_hash_get(struct al_hash_t *ht, const char *key,
 		      struct al_list_value_iter_t **v_iterp, int flag, long topk)
 {
   int ret = 0;
@@ -1570,7 +1570,7 @@ mk_pqueue_hash_iter(struct item *it, struct al_hash_iter_t *iterp,
 }
 
 int
-al_pqueue_hash_get(struct al_hash_t *ht, char *key,
+al_pqueue_hash_get(struct al_hash_t *ht, const char *key,
 		   struct al_pqueue_value_iter_t **v_iterp, int flag)
 {
   int ret = 0;
@@ -1729,7 +1729,7 @@ al_is_pqueue_iter(struct al_hash_iter_t *iterp)
 /* either scalar and list ht acceptable */
 
 int
-item_key(struct al_hash_t *ht, char *key)
+item_key(struct al_hash_t *ht, const char *key)
 {
   if (!ht || !key) return -3;
   unsigned int hv = al_hash_fn_i(key);
@@ -1738,7 +1738,7 @@ item_key(struct al_hash_t *ht, char *key)
 }
 
 int
-item_get(struct al_hash_t *ht, char *key, value_t *v)
+item_get(struct al_hash_t *ht, const char *key, value_t *v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1754,7 +1754,7 @@ item_get(struct al_hash_t *ht, char *key, value_t *v)
 }
 
 int
-item_get_str(struct al_hash_t *ht, char *key, cstr_value_t *v)
+item_get_str(struct al_hash_t *ht, const char *key, cstr_value_t *v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
@@ -1770,7 +1770,7 @@ item_get_str(struct al_hash_t *ht, char *key, cstr_value_t *v)
 }
 
 int
-item_get_pointer(struct al_hash_t *ht, char *key, void **v)
+item_get_pointer(struct al_hash_t *ht, const char *key, void **v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_POINTER)) return -6;
@@ -1786,7 +1786,7 @@ item_get_pointer(struct al_hash_t *ht, char *key, void **v)
 }
 
 int
-item_set(struct al_hash_t *ht, char *key, value_t v)
+item_set(struct al_hash_t *ht, const char *key, value_t v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1802,7 +1802,7 @@ item_set(struct al_hash_t *ht, char *key, value_t v)
 
 #ifdef ITEM_PV
 int
-item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
+item_set_pv(struct al_hash_t *ht, const char *key, value_t v, value_t *ret_pv)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1820,7 +1820,7 @@ item_set_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
 #endif
 
 int
-item_set_str(struct al_hash_t *ht, char *key, cstr_value_t v)
+item_set_str(struct al_hash_t *ht, const char *key, cstr_value_t v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
@@ -1845,7 +1845,7 @@ item_set_str(struct al_hash_t *ht, char *key, cstr_value_t v)
 }
 
 int
-item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, void **ret_v)
+item_set_pointer2(struct al_hash_t *ht, const char *key, void *v, unsigned int size, void **ret_v)
 {
   int ret = 0;
   if (!ht || !key || !v) return -3;
@@ -1878,13 +1878,13 @@ item_set_pointer2(struct al_hash_t *ht, char *key, void *v, unsigned int size, v
 }
 
 inline int
-item_set_pointer(struct al_hash_t *ht, char *key, void *v, unsigned int size)
+item_set_pointer(struct al_hash_t *ht, const char *key, void *v, unsigned int size)
 {
   return item_set_pointer2(ht, key, v, size, NULL);
 }
 
 int
-item_replace(struct al_hash_t *ht, char *key, value_t v)
+item_replace(struct al_hash_t *ht, const char *key, value_t v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1899,7 +1899,7 @@ item_replace(struct al_hash_t *ht, char *key, value_t v)
 
 #ifdef ITEM_PV
 int
-item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
+item_replace_pv(struct al_hash_t *ht, const char *key, value_t v, value_t *ret_pv)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -1916,7 +1916,7 @@ item_replace_pv(struct al_hash_t *ht, char *key, value_t v, value_t *ret_pv)
 #endif
 
 int
-item_replace_str(struct al_hash_t *ht, char *key, cstr_value_t v)
+item_replace_str(struct al_hash_t *ht, const char *key, cstr_value_t v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_STRING)) return -6;
@@ -1937,7 +1937,7 @@ item_replace_str(struct al_hash_t *ht, char *key, cstr_value_t v)
 
 /* either scalar and list ht acceptable */
 int
-item_delete(struct al_hash_t *ht, char *key)
+item_delete(struct al_hash_t *ht, const char *key)
 {
   if (!ht || !key) return -3;
   if (ht->iterators) {
@@ -1959,7 +1959,7 @@ item_delete(struct al_hash_t *ht, char *key)
 
 #ifdef ITEM_PV
 int
-item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
+item_delete_pv(struct al_hash_t *ht, const char *key, value_t *ret_pv)
 {
   if (!ht || !key) return -3;
   if ((ht->h_flag & HASH_TYPE_MASK) != HASH_FLAG_SCALAR) return -6;
@@ -1984,7 +1984,7 @@ item_delete_pv(struct al_hash_t *ht, char *key, value_t *ret_pv)
 #endif
 
 int
-item_unique_id(struct al_hash_t *ht, char *key, long *id)
+item_unique_id(struct al_hash_t *ht, const char *key, long *id)
 {
   if (!ht || !key || !id) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -2002,7 +2002,7 @@ item_unique_id(struct al_hash_t *ht, char *key, long *id)
 }
 
 int
-item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, char *key, long *id)
+item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, const char *key, long *id)
 {
   int ret = 0;
   if (!ht || !invht || !key || !id) return -3;
@@ -2044,7 +2044,7 @@ item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, char *key
 }
 
 int
-item_get_or_set(struct al_hash_t *ht, char *key, long *v, long id)
+item_get_or_set(struct al_hash_t *ht, const char *key, long *v, long id)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -2065,7 +2065,7 @@ item_get_or_set(struct al_hash_t *ht, char *key, long *v, long id)
 }
 
 int
-item_inc(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
+item_inc(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -2080,7 +2080,7 @@ item_inc(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
 }
 
 int
-item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
+item_inc_init(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
@@ -2103,7 +2103,7 @@ item_inc_init(struct al_hash_t *ht, char *key, value_t off, value_t *ret_v)
 }
 
 static int
-add_value_to_pq(struct al_hash_t *ht, char *key, cstr_value_t v)
+add_value_to_pq(struct al_hash_t *ht, const char *key, cstr_value_t v)
 {
   int ret = 0;
   unsigned int hv = al_hash_fn_i(key);
@@ -2140,7 +2140,7 @@ add_value_to_pq(struct al_hash_t *ht, char *key, cstr_value_t v)
 }
 
 static int
-add_value_to_heap(struct al_hash_t *ht, char *key, value_t v)
+add_value_to_heap(struct al_hash_t *ht, const char *key, value_t v)
 {
   int ret = 0;
   unsigned int hv = al_hash_fn_i(key);
@@ -2177,7 +2177,7 @@ add_value_to_heap(struct al_hash_t *ht, char *key, value_t v)
 }
 
 static int
-add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, void *vptr, unsigned int size)
+add_value_to_list(struct al_hash_t *ht, const char *key, value_t v, cstr_value_t lv, void *vptr, unsigned int size)
 {
   if (ht->h_flag & HASH_FLAG_STRING) {
     if (lv) {
@@ -2285,7 +2285,7 @@ add_value_to_list(struct al_hash_t *ht, char *key, value_t v, cstr_value_t lv, v
 }
 
 int
-item_add_value_impl(struct al_hash_t *ht, char *key,
+item_add_value_impl(struct al_hash_t *ht, const char *key,
 		    value_t v, cstr_value_t lv, void *vptr, unsigned int size, int flag)
 {
   if (!ht || !key) return -3;
