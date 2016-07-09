@@ -112,7 +112,7 @@ struct al_hash_t {
   struct al_hash_iter_t *iterators;	// iterators attached to me
   unsigned long pq_max_n;	// priority queue, max number of entries
   int (*dup_p)(void *ptr, unsigned int size, void **ret_v);  // pointer hash pointer duplication
-  int (*free_p)(void *ptr);				     // pointer hash pointer free
+  void (*free_p)(void *ptr);				     // pointer hash pointer free
   int (*sort_p)(const void *, const void *);		     // pointer hash pointer sort
   int (*sort_rev_p)(const void *, const void *);	     // pointer hash pointer sort (rev)
   unsigned int h_flag;		// sort order, ...
@@ -426,7 +426,7 @@ al_set_pqueue_hash_parameter(struct al_hash_t *ht, int sort_order, unsigned long
 int
 al_set_pointer_hash_parameter(struct al_hash_t *ht,
 			      int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
-			      int (*free_p)(void *ptr),
+			      void (*free_p)(void *ptr),
 			      int (*sort_p)(const void *, const void *),
 			      int (*sort_rev_p)(const void *, const void *))
 {
@@ -2044,7 +2044,7 @@ item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, const cha
 }
 
 int
-item_get_or_set(struct al_hash_t *ht, const char *key, long *v, long id)
+item_get_or_set(struct al_hash_t *ht, const char *key, value_t *v, value_t id)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;

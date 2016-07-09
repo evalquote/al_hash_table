@@ -163,7 +163,7 @@ int al_init_hash(int type, int bit, struct al_hash_t **htp);
 int al_set_pqueue_hash_parameter(struct al_hash_t *ht, int sort_order, unsigned long max_n);
 int al_set_pointer_hash_parameter(struct al_hash_t *ht,
 				  int (*dup_p)(void *ptr, unsigned int size, void **ret_v),
-				  int (*free_p)(void *ptr),
+				  void (*free_p)(void *ptr),
 				  int (*sort_p)(const void *, const void *),
 				  int (*sort_rev_p)(const void *, const void *));
 void *al_get_pointer_hash_pointer(const void *a);
@@ -281,7 +281,7 @@ int item_delete(struct al_hash_t *ht, const char *key);
 int item_delete_pv(struct al_hash_t *ht, const char *key, value_t *ret_pv);
 int item_unique_id(struct al_hash_t *ht, const char *key, long *ret_id);
 int item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, const char *key, long *ret_id);
-int item_get_or_set(struct al_hash_t *ht, const char *key, long *v, long id);
+int item_get_or_set(struct al_hash_t *ht, const char *key, value_t *v, value_t id);
 
 int al_list_topk_hash_get(struct al_hash_t *ht, const char *key,
 			  struct al_list_value_iter_t **v_iterp, int flag, long topk);
