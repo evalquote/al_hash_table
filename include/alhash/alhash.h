@@ -268,7 +268,8 @@ int item_add_value_impl(struct al_hash_t *ht, const char *key,
  *   from ht, id and key pairs are remained in invht.
  * item_get_or_set()
  *   if key is found, return the value and return 0
- *   if key is not found, new key/id entry is inserted to a hash table and return 1
+ *   if key is not found, new key/id entry is inserted to a hash table and return 1,
+ *     the id is assigned to *v if v is not NULL
  */
 int item_key(struct al_hash_t *ht, const char *key);
 int item_get(struct al_hash_t *ht, const char *key, value_t *ret_v);
@@ -629,7 +630,6 @@ int al_split_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned 
  *  al_split_nn_n(elms, tmp, "abc\tdef\t\tghi", "\t", 2);
  *  elms== "abc", "def\tghi", NULL
  */
-
 int al_split_nn_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, char *str, const char *del);
 int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, char *str, const char *del, int n);
 #define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
@@ -639,6 +639,17 @@ int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsign
 int n_elements(const char *str, const char *del);
 
 /* get number of separated elments, not return nul string */
+/*
+ *  typical usage: see sample/alcount.c
+ *
+ *  int line_size = AL_LINE_SIZE;
+ *  char *line = (char *)malloc(line_size);
+ *  while (0 <= (len = al_readline(stdin, &line, &line_size))) {
+ *    int nelm = n_elements_nn(line, " \t");  // normaly, nelm == retn + 1, for last NULL
+ *    char *elms[nelm];
+ *    int retn = al_split_nn_impl(elms, nelm, line, line_size, line, " \t");
+ *  }
+ */
 int n_elements_nn(const char *str, const char *del);
 
 int al_strcjoin_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsigned int tmp_size, const char delch, int n);

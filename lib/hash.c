@@ -2044,21 +2044,22 @@ item_unique_id_with_inv(struct al_hash_t *ht, struct al_hash_t *invht, const cha
 }
 
 int
-item_get_or_set(struct al_hash_t *ht, const char *key, value_t *v, value_t id)
+item_get_or_set(struct al_hash_t *ht, const char *key, value_t *ret_v, value_t id)
 {
   if (!ht || !key) return -3;
   if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
   unsigned int hv = al_hash_fn_i(key);
   struct item *it = hash_find(ht, key, hv);
   if (it) {
-    if (v)
-      *v = it->u.value;
+    if (ret_v)
+      *ret_v = it->u.value;
     return 0;
   }
   union item_u u = { .value = id };
   int ret = hash_v_insert(ht, hv, key, u);
-  if (!ret && v) {
-    *v = id;
+  if (!ret) {
+    if (ret_v)
+      *ret_v = id;
     return 1;
   }
   return ret;
