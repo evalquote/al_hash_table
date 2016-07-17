@@ -60,6 +60,13 @@ struct al_heap_iter_t;
 #define HASH_TYPE_POINTER	0x1000
 
 /*
+ *  for skiplist only
+ *  sl_set always inserts new node to
+ *  skiplist if key is already exists.
+ */
+#define SL_DUP_KEY              0x4000
+
+/*
  * this macro is suitable for 'topk' parameter, means half position of items
  *
  * ex.
@@ -517,7 +524,7 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
  *  return -2, allocation fails
  *  return -3, sl is NULL
  */
-int al_create_skiplist(struct al_skiplist_t **slp, int sort_order);
+int al_create_skiplist(struct al_skiplist_t **slp, int flag);
 int al_free_skiplist(struct al_skiplist_t *sl);
 int al_skiplist_stat(struct al_skiplist_t *sl);
 int al_set_skiplist_err_msg(struct al_skiplist_t *sl, const char *msg);
