@@ -2803,6 +2803,57 @@ sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t
 #endif
 
 int
+sl_front(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v)
+{
+  if (!sl) return -3;
+  if (sl->head->forward[0] == NULL) return -1; // sl is empty
+
+  *keyp = sl->head->forward[0]->key;
+  if (ret_v)
+    *ret_v = sl->head->forward[0]->u.value;
+  return 0;
+}
+
+int
+sl_pop_front_node(struct al_skiplist_t *sl)
+{
+
+  if (!sl) return -3;
+  if (sl->head->forward[0] == NULL) return -1; // sl is empty
+
+  struct slnode *update[SL_MAX_LEVEL], *np;
+  int i;
+
+  np = sl->head;
+  for (i = sl->level - 1; 0 <= i; --i) {
+    update[i] = np;
+  }
+
+#ifdef SL_FIRST_KEY
+  pq_key_t key = np->forward[0]->key;
+  sl_delete_node(sl, key, np->forward[0], update);
+#else
+  sl_delete_node(sl, "", np->forward[0], update);
+#endif
+
+  return 0;
+}
+
+#ifdef SL_LAST_KEY
+int
+sl_back(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v)
+{
+  if (!sl) return -3;
+  if (sl->head->forward[0] == NULL) return -1; // sl is empty
+
+  *keyp = sl->last_node->key;
+  if (ret_v)
+    *ret_v = sl->last_node->u.value;
+  return 0;
+}
+#endif
+
+int
 sl_empty_p(struct al_skiplist_t *sl)
 {
   if (!sl) return -3;

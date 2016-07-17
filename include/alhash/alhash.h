@@ -515,6 +515,7 @@ int al_pqueue_hash_rewind_value(struct al_pqueue_value_iter_t *v_iterp);
 
 /*
  *  return -2, allocation fails
+ *  return -3, sl is NULL
  */
 int al_create_skiplist(struct al_skiplist_t **slp, int sort_order);
 int al_free_skiplist(struct al_skiplist_t *sl);
@@ -529,6 +530,13 @@ long sl_n_entries(struct al_skiplist_t *sl);
  */
 int sl_set(struct al_skiplist_t *sl, pq_key_t key, pq_value_t v);
 int sl_set_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t v, unsigned long max_n);
+
+/*
+ *  return -1, skip list is empty
+ */
+int sl_front(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v);
+int sl_back(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v);
+int sl_pop_front_node(struct al_skiplist_t *sl);
 
 int sl_delete(struct al_skiplist_t *sl, pq_key_t key);
 int sl_delete_last_node(struct al_skiplist_t *sl);
