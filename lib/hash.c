@@ -2818,7 +2818,8 @@ sl_front(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v)
   if (!sl) return -3;
   if (sl->head->forward[0] == NULL) return -1; // sl is empty
 
-  *keyp = sl->head->forward[0]->key;
+  if (keyp)
+    *keyp = sl->head->forward[0]->key;
   if (ret_v)
     *ret_v = sl->head->forward[0]->u.value;
   return 0;
@@ -2856,7 +2857,8 @@ sl_back(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v)
   if (!sl) return -3;
   if (sl->head->forward[0] == NULL) return -1; // sl is empty
 
-  *keyp = sl->last_node->key;
+  if (keyp)
+    *keyp = sl->last_node->key;
   if (ret_v)
     *ret_v = sl->last_node->u.value;
   return 0;
@@ -2911,7 +2913,8 @@ sl_iter(struct al_skiplist_iter_t *iterp, pq_key_t *keyp, pq_value_t *ret_v)
     return ret;
   }
 
-  *keyp = iterp->current_node->key;
+  if (keyp)
+    *keyp = iterp->current_node->key;
   if (ret_v)
     *ret_v = iterp->current_node->u.value;
   iterp->current_node = iterp->current_node->forward[0];

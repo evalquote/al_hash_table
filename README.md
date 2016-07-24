@@ -15,7 +15,7 @@ API are as follows. (from hash.h, not up-to-date)
 				      int (*free_p)(void *ptr),
 				      int (*sort_p)(const void *, const void *),
 				      int (*sort_rev_p)(const void *, const void *))
-    void *al_get_pointer_hash_pointer(const void *a);
+    void *al_get_pointer_hash_pointer(const void *a)
 
     int al_free_hash(struct al_hash_t *ht)
 
@@ -86,6 +86,10 @@ API are as follows. (from hash.h, not up-to-date)
     int sl_delete_last_node(struct al_skiplist_t *sl)
     int sl_key(struct al_skiplist_t *sl, pq_key_t key)
     int sl_get(struct al_skiplist_t *sl, pq_key_t key, pq_value_t *ret_v)
+    int sl_front(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v)
+    int sl_back(struct al_skiplist_t *sl, pq_key_t *keyp, pq_value_t *ret_v)
+    int sl_pop_front_node(struct al_skiplist_t *sl)
+    int sl_delete_last_node(struct al_skiplist_t *sl)
     int sl_inc_init(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t *ret_v)
     int sl_inc_init_n(struct al_skiplist_t *sl, pq_key_t key, pq_value_t off, pq_value_t *ret_v, unsigned long max_n)
     int al_sl_iter_init(struct al_skiplist_t *sl, struct al_skiplist_iter_t **iterp)
