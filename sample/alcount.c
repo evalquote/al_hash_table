@@ -29,14 +29,15 @@ main() {
       fprintf(stderr, "inc %d\n", ret);
     }
 #else
-    int nelm = n_elements_nn(line, " \t");  // one more for last NULL
-    char *elms[nelm];
-    int retn = al_split_nn_impl(elms, nelm, line, line_size, line, " \t");
+    int nelm = n_elements_nn(line, " \t");  // + 1, for last NULL
+    char *elms[nelm + 1];
+    int retn = al_split_nn_impl(elms, nelm + 1, line, line_size, line, " \t");
     if (retn < 0) {
       fprintf(stderr, "al_split_nn %d\n", ret);
       continue;
     }
-    for (int i = 0; i < retn; i++) {
+    int i;
+    for (i = 0; i < retn; i++) {
       ret = item_inc_init(ht_count, elms[i], (value_t)1, NULL);
       if (ret < 0) {
 	fprintf(stderr, "inc %d\n", ret);
