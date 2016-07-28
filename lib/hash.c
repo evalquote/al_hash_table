@@ -3470,7 +3470,7 @@ int
 n_elements(const char *str, const char *del)
 {
   if (!str || !del) return -3;
-  int count = 1;
+  int count = 0;
   if (!*str) return count; /* empty string */
 
   size_t cp = 0;
@@ -3488,7 +3488,7 @@ n_elements_nn(const char *str, const char *del)
 {
   if (!str || !del) return -3;
 
-  int count = 1;
+  int count = 0;
   if (!*str) return count; /* empty string */
 
   size_t cp = 0;

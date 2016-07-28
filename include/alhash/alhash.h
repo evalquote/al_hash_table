@@ -660,7 +660,7 @@ int n_elements(const char *str, const char *del);
  *  int line_size = AL_LINE_SIZE;
  *  char *line = (char *)malloc(line_size);
  *  while (0 <= (len = al_readline(stdin, &line, &line_size))) {
- *    int nelm = n_elements_nn(line, " \t");  // normaly, nelm == retn + 1, for last NULL
+ *    int nelm = n_elements_nn(line, " \t") + 1;  // + 1, for last NULL
  *    char *elms[nelm];
  *    int retn = al_split_nn_impl(elms, nelm, line, line_size, line, " \t");
  *  }
