@@ -2103,6 +2103,29 @@ item_inc_init(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v
   return 0;
 }
 
+int
+item_inc_init2(struct al_hash_t *ht, const char *key, value_t off, value_t init, value_t *ret_v)
+{
+  if (!ht || !key) return -3;
+  if (!(ht->h_flag & HASH_FLAG_SCALAR)) return -6;
+  unsigned int hv = al_hash_fn_i(key);
+  struct item *it = hash_find(ht, key, hv);
+  if (!it) {
+    union item_u u = { .value = init };
+#ifdef INC_INIT_RETURN_ONE
+    int ret = hash_v_insert(ht, hv, key, u);
+    return ret == 0 ? 1 : ret;
+#else
+    return hash_v_insert(ht, hv, key, u);
+#endif
+  }
+
+  it->u.value += off;
+  if (ret_v)
+    *ret_v = it->u.value;
+  return 0;
+}
+
 static int
 add_value_to_pq(struct al_hash_t *ht, const char *key, cstr_value_t v)
 {

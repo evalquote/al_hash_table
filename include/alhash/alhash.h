@@ -309,6 +309,7 @@ int al_pqueue_hash_get(struct al_hash_t *ht, const char *key,
  *   if key is found, then increment value field by 'off' and
  *     set incremented value to *ret_v, and return 0
  *   if key is not found, add key with 'off' as initial value.
+ *     (add key with 'init' as initial value. item_inc_init2())
  *     *ret_v is not modified.
  *     return 0, on successfully key adding, (undef   INC_INIT_RETURN_ONE)
  *     return 1, on successfully key adding, (defined INC_INIT_RETURN_ONE)
@@ -317,6 +318,7 @@ int al_pqueue_hash_get(struct al_hash_t *ht, const char *key,
  */
 int item_inc(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v);
 int item_inc_init(struct al_hash_t *ht, const char *key, value_t off, value_t *ret_v);
+int item_inc_init2(struct al_hash_t *ht, const char *key, value_t off, value_t init, value_t *ret_v);
 
 /* iterators */
 
@@ -650,10 +652,10 @@ int al_split_nn_n_impl(char **elms, unsigned int elms_size, char *tmp_cp, unsign
 #define al_split_nn(elms, tmp, str, del) al_split_nn_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del))
 #define al_split_nn_n(elms, tmp, str, del, n) al_split_nn_n_impl((elms), sizeof(elms)/sizeof(char *), (tmp), sizeof(tmp), (str), (del), (n))
 
-/* get number of separated elments */
+/* get number of separated elements */
 int n_elements(const char *str, const char *del);
 
-/* get number of separated elments, not return nul string */
+/* get number of separated elements, not return nul string */
 /*
  *  typical usage: see sample/alcount.c
  *
